@@ -1,0 +1,570 @@
+import Foundation
+
+public enum ProfileError: LocalizedError, Equatable {
+    case invalidName
+    case profileExists(String)
+    case profileNotFound(String)
+    case refusedToClobber(String)
+    case nothingToMigrate
+    case profileIsActive(String)
+    case invalidBackup(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidName:
+            return "Profile name must contain at least one of A–Z, 0–9, _ or -."
+        case .profileExists(let name):
+            return "Profile “\(name)” already exists."
+        case .profileNotFound(let name):
+            return "Profile “\(name)” does not exist."
+        case .refusedToClobber(let path):
+            return "\(path) exists and is not a symlink; refusing to touch it."
+        case .nothingToMigrate:
+            return "The Claude directory is already managed; migration is not needed."
+        case .profileIsActive(let name):
+            return "Profile “\(name)” is active; switch away before deleting it."
+        case .invalidBackup(let name):
+            return "“\(name)” is not a session backup folder (no profile session trees inside)."
+        }
+    }
+}
+
+public enum ClaudeDirState: Equatable {
+    case missing
+    case realDirectory
+    case symlink(target: URL?, valid: Bool)
+    case otherFile
+}
+
+/// All filesystem logic. No UI, no AppKit — fully testable against a fake home directory.
+public final class ProfileManager {
+    public static let sessionTrees = ["claude-code-sessions", "local-agent-mode-sessions"]
+
+    public let home: URL
+    private let fm = FileManager.default
+
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home.standardizedFileURL
+    }
+
+    public var claudeDir: URL { home.appendingPathComponent("Library/Application Support/Claude") }
+    public var profilesDir: URL { home.appendingPathComponent("Library/Application Support/Claude-Profiles") }
+    public var sharedDir: URL { profilesDir.appendingPathComponent("_shared-sessions") }
+    // Display order for the unified list, one name per line. `_` prefix keeps
+    // profiles() from listing it. Order is a plain list, never dir renames —
+    // renaming a profile would log its CLI side out (path = Keychain identity).
+    private var orderFile: URL { profilesDir.appendingPathComponent("_order") }
+
+    // MARK: - Inspection
+
+    public func claudeDirState() -> ClaudeDirState {
+        guard let type = itemType(claudeDir) else { return .missing }
+        switch type {
+        case .typeSymbolicLink:
+            let target = (try? fm.destinationOfSymbolicLink(atPath: claudeDir.path))
+                .map { URL(fileURLWithPath: $0, relativeTo: claudeDir.deletingLastPathComponent()).standardizedFileURL }
+            let valid = target.map { isRealDirectory($0) } ?? false
+            return .symlink(target: target, valid: valid)
+        case .typeDirectory:
+            return .realDirectory
+        default:
+            return .otherFile
+        }
+    }
+
+    public func profiles() -> [String] {
+        let names = (try? fm.contentsOfDirectory(atPath: profilesDir.path)) ?? []
+        return names
+            .filter { !$0.hasPrefix("_") && !$0.hasPrefix(".") && isRealDirectory(profilesDir.appendingPathComponent($0)) }
+            .sorted()
+    }
+
+    public func savedOrder() -> [String] {
+        guard let raw = try? String(contentsOf: orderFile, encoding: .utf8) else { return [] }
+        return raw.split(whereSeparator: \.isNewline).map(String.init)
+    }
+
+    public func saveOrder(_ names: [String]) throws {
+        try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
+        try (names.joined(separator: "\n") + "\n").write(to: orderFile, atomically: true, encoding: .utf8)
+    }
+
+    /// Sort `names` by the saved order; names not in the file (created outside
+    /// the app, or before ordering existed) fall to the end alphabetically — so
+    /// a freshly created profile shows up last until the user drags it.
+    public func ordered(_ names: [String]) -> [String] {
+        let rank = Dictionary(savedOrder().enumerated().map { ($1, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        return names.sorted {
+            switch (rank[$0], rank[$1]) {
+            case let (a?, b?): return a < b
+            case (_?, nil):    return true
+            case (nil, _?):    return false
+            default:           return $0 < $1
+            }
+        }
+    }
+
+    public func activeProfile() -> String? {
+        guard case .symlink(let target?, true) = claudeDirState(),
+              target.deletingLastPathComponent().path == profilesDir.path
+        else { return nil }
+        return target.lastPathComponent
+    }
+
+    public var sharedHistoryEnabled: Bool { isRealDirectory(sharedDir) }
+
+    public static func sanitize(_ raw: String) -> String? {
+        // @ and . allowed so email addresses work as profile names.
+        let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-@."
+        let name = String(raw.filter { allowed.contains($0) })
+        return name.isEmpty || name.allSatisfy({ $0 == "." }) ? nil : name
+    }
+
+    // MARK: - Operations
+
+    /// First-run migration: move the real Claude dir into a profile (or create an
+    /// empty profile if the dir is missing) and replace it with a symlink.
+    public func migrate(name rawName: String) throws {
+        guard let name = Self.sanitize(rawName) else { throw ProfileError.invalidName }
+        try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
+        let dest = profilesDir.appendingPathComponent(name)
+        guard !itemExists(dest) else { throw ProfileError.profileExists(name) }
+
+        switch claudeDirState() {
+        case .realDirectory:
+            try fm.moveItem(at: claudeDir, to: dest)
+        case .missing:
+            try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+        case .symlink, .otherFile:
+            throw ProfileError.nothingToMigrate
+        }
+        try pointClaudeDir(at: dest)
+    }
+
+    public func switchTo(name: String) throws {
+        let dest = profilesDir.appendingPathComponent(name)
+        guard isRealDirectory(dest) else { throw ProfileError.profileNotFound(name) }
+        try pointClaudeDir(at: dest)
+    }
+
+    @discardableResult
+    public func createProfile(name rawName: String) throws -> String {
+        guard let name = Self.sanitize(rawName) else { throw ProfileError.invalidName }
+        try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
+        let dir = profilesDir.appendingPathComponent(name)
+        guard !itemExists(dir) else { throw ProfileError.profileExists(name) }
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        if sharedHistoryEnabled {
+            for tree in Self.sessionTrees {
+                let sharedTree = sharedDir.appendingPathComponent(tree)
+                guard isRealDirectory(sharedTree) else { continue }
+                try fm.createSymbolicLink(at: dir.appendingPathComponent(tree), withDestinationURL: sharedTree)
+            }
+        }
+        return name
+    }
+
+    // MARK: - Rename / delete
+
+    /// Rename a profile. If it is the active one, the symlink is repointed —
+    /// callers must have Claude quit in that case.
+    @discardableResult
+    public func renameProfile(_ name: String, to rawNewName: String) throws -> String {
+        guard let newName = Self.sanitize(rawNewName) else { throw ProfileError.invalidName }
+        guard newName != name else { return name }
+        let src = profilesDir.appendingPathComponent(name)
+        guard isRealDirectory(src) else { throw ProfileError.profileNotFound(name) }
+        let dst = profilesDir.appendingPathComponent(newName)
+        guard !itemExists(dst) else { throw ProfileError.profileExists(newName) }
+        let wasActive = activeProfile() == name
+        try fm.moveItem(at: src, to: dst)
+        if wasActive { try pointClaudeDir(at: dst) } // keep the symlink valid
+        return newName
+    }
+
+    /// Delete a profile — this is "logout": the account's login state is removed.
+    /// The active profile can never be deleted (the symlink points at it).
+    public func deleteProfile(name: String) throws {
+        guard activeProfile() != name else { throw ProfileError.profileIsActive(name) }
+        let dir = profilesDir.appendingPathComponent(name)
+        guard isRealDirectory(dir) else { throw ProfileError.profileNotFound(name) }
+        try fm.removeItem(at: dir) // shared trees are symlinks inside it — shared history survives
+    }
+
+    /// Merge every profile's session trees into `_shared-sessions` and symlink them back.
+    /// Returns the backup directory, or nil when there was nothing to migrate (idempotent re-run).
+    ///
+    /// `promoteActive` makes the live account own the master: its `<account>/<org>`
+    /// becomes the real session pile and every other account links to it. Claude
+    /// then always reads and writes a real directory, never a symlink its own
+    /// writes could shadow with a fresh (empty) one — the cause of sessions
+    /// vanishing from the sidebar after a switch. Callers that run at a known-idle
+    /// moment (switch, Claude quit, launch) pass true; tests default to false.
+    @discardableResult
+    public func enableSharedHistory(now: Date = Date(), promoteActive: Bool = false) throws -> URL? {
+        let names = profiles()
+        let active = promoteActive ? activeProfile() : nil
+
+        // Backup first: copy every real (not yet symlinked) session tree.
+        let backup = try backupRealTrees(tag: "backup", now: now)
+
+        // Merge each profile tree into the shared tree, then symlink it back.
+        for tree in Self.sessionTrees {
+            let sharedTree = sharedDir.appendingPathComponent(tree)
+            try fm.createDirectory(at: sharedTree, withIntermediateDirectories: true)
+            for profile in names {
+                let link = profilesDir.appendingPathComponent(profile).appendingPathComponent(tree)
+                if isSymlink(link) { continue }
+                if isRealDirectory(link) {
+                    try merge(contentsOf: link, into: sharedTree)
+                    try fm.removeItem(at: link)
+                }
+                // Missing trees get linked too, so future sessions land in the shared tree.
+                try fm.createSymbolicLink(at: link, withDestinationURL: sharedTree)
+            }
+            let preferred = active.flatMap { activeOrgDir(in: sharedTree, profile: $0) }
+            let master = try consolidateOrgDirs(in: sharedTree, preferred: preferred)
+            try prelinkAccounts(in: sharedTree, master: master, profiles: names)
+        }
+        return backup
+    }
+
+    /// The active account's `<account>/<org>` path inside `tree`, once Claude has
+    /// recorded its ids. With several orgs, prefer one that already holds real
+    /// sessions (the one Claude just used), else any that exists, else the first —
+    /// whichever we pick becomes the real master and the rest link to it, so every
+    /// org of the account still resolves to the pile.
+    private func activeOrgDir(in tree: URL, profile name: String) -> URL? {
+        let dir = profilesDir.appendingPathComponent(name)
+        guard let account = accountID(of: dir) else { return nil }
+        let orgs = orgIDs(of: dir).sorted()
+        guard !orgs.isEmpty else { return nil }
+        let candidates = orgs.map { tree.appendingPathComponent(account).appendingPathComponent($0) }
+        return candidates.first(where: isRealDirectory)
+            ?? candidates.first(where: itemExists)
+            ?? candidates.first
+    }
+
+    /// Undo sharing. Merged sessions cannot be split back per account, so the
+    /// honest semantics are: every profile keeps its own real copy of the
+    /// combined history (for the account/org ids Claude recorded at login),
+    /// and sessions created afterwards stay per-profile. Only touches links —
+    /// a profile whose tree is still a real directory is left alone.
+    public func disableSharedHistory() throws {
+        guard sharedHistoryEnabled else { return }
+        let names = profiles()
+        for tree in Self.sessionTrees {
+            let sharedTree = sharedDir.appendingPathComponent(tree)
+            for profile in names {
+                let profileDir = profilesDir.appendingPathComponent(profile)
+                let link = profileDir.appendingPathComponent(tree)
+                guard isSymlink(link) else { continue }
+                try fm.removeItem(at: link)
+                try fm.createDirectory(at: link, withIntermediateDirectories: true)
+                guard isRealDirectory(sharedTree), let account = accountID(of: profileDir) else { continue }
+                for org in orgIDs(of: profileDir) {
+                    let src = sharedTree.appendingPathComponent(account).appendingPathComponent(org)
+                        .resolvingSymlinksInPath()
+                    let dst = link.appendingPathComponent(account).appendingPathComponent(org)
+                    guard isRealDirectory(src), !itemExists(dst) else { continue }
+                    try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fm.copyItem(at: src, to: dst)
+                }
+            }
+        }
+        try fm.removeItem(at: sharedDir)
+    }
+
+    /// Copy every real (not-yet-symlinked) session tree to
+    /// `~/claude-session-<tag>-<timestamp>/<profile>/<tree>`. Nil when nothing is real
+    /// (everything already symlinked into the shared tree, or no sessions yet).
+    @discardableResult
+    private func backupRealTrees(tag: String, now: Date) throws -> URL? {
+        var realTrees: [(profile: String, tree: String)] = []
+        for profile in profiles() {
+            for tree in Self.sessionTrees
+            where isRealDirectory(profilesDir.appendingPathComponent(profile).appendingPathComponent(tree)) {
+                realTrees.append((profile, tree))
+            }
+        }
+        guard !realTrees.isEmpty else { return nil }
+        let backupDir = home.appendingPathComponent("claude-session-\(tag)-\(timestamp(now))")
+        for (profile, tree) in realTrees {
+            let src = profilesDir.appendingPathComponent(profile).appendingPathComponent(tree)
+            let dst = backupDir.appendingPathComponent(profile).appendingPathComponent(tree)
+            try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: src, to: dst)
+        }
+        return backupDir
+    }
+
+    private func timestamp(_ now: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyyMMdd-HHmmss"
+        return fmt.string(from: now)
+    }
+
+    public struct RestoreResult {
+        /// The current trees, saved before restoring so the restore is itself reversible.
+        public let prerestoreBackup: URL?
+        /// The `_shared-sessions` pile, moved aside. Post-enable sessions live here as one
+        /// undifferentiated set — they cannot be split back per account.
+        public let sharedArchive: URL?
+    }
+
+    /// True per-account rollback: reset every existing profile to its own sessions from
+    /// `backupDir` (a `claude-session-backup-*` written when sharing was enabled). Pre-enable
+    /// history comes back exactly; the shared pile is archived — not deleted, and not
+    /// re-attributed, because sessions made while sharing was on have no per-account origin.
+    /// Needs Claude down, like enable/disable.
+    @discardableResult
+    public func restoreFromBackup(_ backupDir: URL, now: Date = Date()) throws -> RestoreResult {
+        // Reject a stray folder: it must hold at least one <profile>/<sessionTree>.
+        guard isRealDirectory(backupDir),
+              try realSubdirectories(of: backupDir).contains(where: { prof in
+                  Self.sessionTrees.contains { isRealDirectory(prof.appendingPathComponent($0)) }
+              })
+        else { throw ProfileError.invalidBackup(backupDir.lastPathComponent) }
+
+        // Save the current state first so this restore can itself be undone.
+        let prerestore = try backupRealTrees(tag: "prerestore", now: now)
+
+        // Reset each existing profile to the backup's copy — or an empty tree when the
+        // backup predates it (a profile created after sharing was enabled).
+        for name in profiles() {
+            for tree in Self.sessionTrees {
+                let target = profilesDir.appendingPathComponent(name).appendingPathComponent(tree)
+                if itemExists(target) { try fm.removeItem(at: target) } // symlink or real dir
+                let src = backupDir.appendingPathComponent(name).appendingPathComponent(tree)
+                if isRealDirectory(src) {
+                    try fm.copyItem(at: src, to: target)
+                } else {
+                    try fm.createDirectory(at: target, withIntermediateDirectories: true)
+                }
+            }
+        }
+
+        // Archive the combined pile instead of deleting it; this also flips
+        // sharedHistoryEnabled back to false (the shared dir no longer exists).
+        var archive: URL?
+        if isRealDirectory(sharedDir) {
+            let dst = home.appendingPathComponent("claude-shared-archive-\(timestamp(now))")
+            try fm.moveItem(at: sharedDir, to: dst)
+            archive = dst
+        }
+        // ponytail: not transactional across profiles; the prerestore backup is the recovery path.
+        return RestoreResult(prerestoreBackup: prerestore, sharedArchive: archive)
+    }
+
+    /// Safe while Claude is running: only creates missing symlinks — never merges,
+    /// moves, or deletes. Lets an account that just logged in join the combined
+    /// list without waiting for a full quit-time merge.
+    /// Returns how many links were created — nonzero means Claude needs a restart
+    /// to pick them up (its sidebar is already loaded in memory).
+    @discardableResult
+    public func prelinkKnownAccounts() throws -> Int {
+        guard sharedHistoryEnabled else { return 0 }
+        let names = profiles()
+        var created = 0
+        for tree in Self.sessionTrees {
+            let sharedTree = sharedDir.appendingPathComponent(tree)
+            var orgDirs: [URL] = []
+            for account in try realSubdirectories(of: sharedTree) {
+                orgDirs.append(contentsOf: try realSubdirectories(of: account))
+            }
+            // Steady state has exactly one real org dir (the master). More than one
+            // means a merge is pending — leave that to the next quit-time relink.
+            guard orgDirs.count == 1 else { continue }
+            created += try prelinkAccounts(in: sharedTree, master: orgDirs[0], profiles: names)
+        }
+        return created
+    }
+
+    /// Accounts that logged in but never opened a Code/agent session have no
+    /// <account>/<org> dir at all, so their sidebar stays empty even after a merge.
+    /// Claude records both uuids in the profile right after login — use them to
+    /// symlink the account's org dir to the master ahead of time.
+    @discardableResult
+    private func prelinkAccounts(in tree: URL, master: URL?, profiles names: [String]) throws -> Int {
+        guard let master else { return 0 }
+        var created = 0
+        for profile in names {
+            let profileDir = profilesDir.appendingPathComponent(profile)
+            guard let account = accountID(of: profileDir) else { continue }
+            for org in orgIDs(of: profileDir) {
+                let orgDir = tree.appendingPathComponent(account).appendingPathComponent(org)
+                guard !itemExists(orgDir) else { continue } // real or already linked
+                try fm.createDirectory(at: orgDir.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.createSymbolicLink(at: orgDir, withDestinationURL: master)
+                created += 1
+            }
+        }
+        return created
+    }
+
+    /// True once Claude has written the profile's account/org ids — i.e. the
+    /// account has completed its first login. Before that, prelinking is
+    /// impossible (the ids are unknowable), which is why a brand-new profile's
+    /// sidebar starts empty even with shared history on.
+    public func hasAccountIDs(profile name: String) -> Bool {
+        let dir = profilesDir.appendingPathComponent(name)
+        return accountID(of: dir) != nil && !orgIDs(of: dir).isEmpty
+    }
+
+    /// Last usage-limit numbers Claude Desktop saw for this profile's account,
+    /// read from the profile's own HTTP cache. Nil when nothing is cached.
+    public func usage(profile name: String) -> ProfileUsage? {
+        let dir = profilesDir.appendingPathComponent(name)
+        return UsageReader.usage(inProfileDir: dir, orgIDs: orgIDs(of: dir))
+    }
+
+    /// ownerAccountId from cowork-enabled-cli-ops.json — written on login.
+    private func accountID(of profileDir: URL) -> String? {
+        guard let data = try? Data(contentsOf: profileDir.appendingPathComponent("cowork-enabled-cli-ops.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return json["ownerAccountId"] as? String
+    }
+
+    /// Org uuids from config.json `dxt:<name>:<org-uuid>` keys — written on login.
+    private func orgIDs(of profileDir: URL) -> Set<String> {
+        guard let data = try? Data(contentsOf: profileDir.appendingPathComponent("config.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [] }
+        var ids: Set<String> = []
+        for key in json.keys where key.hasPrefix("dxt:") {
+            let parts = key.split(separator: ":")
+            if parts.count == 3, parts[2].count == 36 { ids.insert(String(parts[2])) }
+        }
+        return ids
+    }
+
+    // MARK: - Internals
+
+    /// Repoint the `Claude` symlink. Never deletes anything that is not a symlink.
+    /// Atomic: the new link is created beside the old one and rename(2)d over it,
+    /// so a crash mid-switch can never leave the path missing or dangling.
+    private func pointClaudeDir(at dest: URL) throws {
+        switch claudeDirState() {
+        case .realDirectory, .otherFile:
+            throw ProfileError.refusedToClobber(claudeDir.path)
+        case .missing, .symlink:
+            let tmp = claudeDir.deletingLastPathComponent()
+                .appendingPathComponent(".claude-link-\(ProcessInfo.processInfo.processIdentifier)")
+            try? fm.removeItem(at: tmp)
+            try fm.createSymbolicLink(at: tmp, withDestinationURL: dest)
+            guard rename(tmp.path, claudeDir.path) == 0 else {
+                let err = errno
+                try? fm.removeItem(at: tmp)
+                throw POSIXError(POSIXErrorCode(rawValue: err) ?? .EIO)
+            }
+        }
+    }
+
+    /// Recursive copy that never overwrites an existing file.
+    private func merge(contentsOf src: URL, into dst: URL) throws {
+        try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+        for name in try fm.contentsOfDirectory(atPath: src.path) {
+            let s = src.appendingPathComponent(name)
+            let d = dst.appendingPathComponent(name)
+            if !itemExists(d) {
+                try fm.copyItem(at: s, to: d)
+            } else if isRealDirectory(s), isRealDirectory(d) {
+                try merge(contentsOf: s, into: d)
+            }
+            // else: destination exists — never overwrite.
+        }
+    }
+
+    /// Collapse a shared tree to a single real `<account>/<org>` master with every
+    /// other org dir symlinked to it. The master is `preferred` (the active
+    /// account's org dir) when given — relocated there so the live Claude owns a
+    /// real pile — otherwise the real dir with the most files. Returns the master.
+    ///
+    /// The final pass points every other org entry straight at the master: real
+    /// islands (a fresh dir Claude wrote before it was linked) are merged in, and
+    /// stale/looping symlinks are re-pointed — so a moved master never leaves a
+    /// broken link or a growing symlink chain behind.
+    @discardableResult
+    private func consolidateOrgDirs(in tree: URL, preferred: URL? = nil) throws -> URL? {
+        // Every <account>/<org> entry, real dirs and symlinks alike.
+        func orgEntries() throws -> [URL] {
+            var out: [URL] = []
+            for account in try realSubdirectories(of: tree) {
+                for name in (try? fm.contentsOfDirectory(atPath: account.path)) ?? [] {
+                    let u = account.appendingPathComponent(name)
+                    if isRealDirectory(u) || isSymlink(u) { out.append(u) }
+                }
+            }
+            return out
+        }
+
+        let realOrgs = try orgEntries().filter(isRealDirectory).sorted { $0.path < $1.path }
+        guard !realOrgs.isEmpty else { return nil }
+
+        // The pile: real dir with the most files (deterministic tie-break by path).
+        var pile = realOrgs[0]
+        var bestCount = fileCount(in: pile)
+        for dir in realOrgs.dropFirst() {
+            let count = fileCount(in: dir)
+            if count > bestCount { pile = dir; bestCount = count }
+        }
+
+        // Master follows the active account: relocate the pile into its org dir,
+        // leaving a symlink where the pile used to be so old accounts still resolve.
+        // Fold any island already at `preferred` into the pile first, then move the
+        // pile wholesale — so none of the pile's files can be lost to a name clash.
+        var master = pile
+        if let preferred, preferred.path != pile.path {
+            if isRealDirectory(preferred) { try merge(contentsOf: preferred, into: pile) }
+            if itemExists(preferred) { try fm.removeItem(at: preferred) } // island dir or stale symlink
+            try fm.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.moveItem(at: pile, to: preferred)
+            try fm.createSymbolicLink(at: pile, withDestinationURL: preferred)
+            master = preferred
+        }
+
+        // ponytail: rewrites all links every relink (O(accounts)); fine at this scale.
+        for entry in try orgEntries() where entry.path != master.path {
+            if isRealDirectory(entry) {
+                try merge(contentsOf: entry, into: master)
+                try fm.removeItem(at: entry)
+            } else if (try? fm.destinationOfSymbolicLink(atPath: entry.path)) == master.path {
+                continue // already points straight at the master
+            } else {
+                try fm.removeItem(at: entry)
+            }
+            try fm.createSymbolicLink(at: entry, withDestinationURL: master)
+        }
+        return master
+    }
+
+    private func realSubdirectories(of url: URL) throws -> [URL] {
+        guard isRealDirectory(url) else { return [] }
+        return try fm.contentsOfDirectory(atPath: url.path)
+            .map { url.appendingPathComponent($0) }
+            .filter { isRealDirectory($0) }
+    }
+
+    private func fileCount(in dir: URL) -> Int {
+        guard let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey]) else { return 0 }
+        var count = 0
+        for case let file as URL in enumerator
+        where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            count += 1
+        }
+        return count
+    }
+
+    // lstat semantics: attributesOfItem does not traverse the final symlink,
+    // so these are safe on broken symlinks and never confuse a link with a dir.
+    private func itemType(_ url: URL) -> FileAttributeType? {
+        (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
+    }
+
+    private func itemExists(_ url: URL) -> Bool { itemType(url) != nil }
+    private func isSymlink(_ url: URL) -> Bool { itemType(url) == .typeSymbolicLink }
+    private func isRealDirectory(_ url: URL) -> Bool { itemType(url) == .typeDirectory }
+}
