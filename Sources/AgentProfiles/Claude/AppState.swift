@@ -6,9 +6,9 @@ import ClaudeProfilesCore
 final class AppState: ObservableObject {
     enum Mode { case needsSetup, ready }
 
-    let manager = ProfileManager()
-    let cli = CLIProfileManager()
-    let claude = ClaudeAppController()
+    let manager: ProfileManager
+    let cli: CLIProfileManager
+    let claude: ClaudeAppController
 
     @Published var profiles: [String] = []
     @Published var activeProfile: String?
@@ -25,14 +25,19 @@ final class AppState: ObservableObject {
     @Published var usageScanRunning = false
     @Published var lastUsageScan: Date?
 
-    var claudeAppFound: Bool { claude.appURL != nil }
+    var claudeAppFound: Bool { claude.appURL != nil || claude.isInert }
 
     /// The panel's refresh button and the status-item menu both live outside
     /// any SwiftUI scene, so opening the main window goes through this hook
     /// (set by the app delegate) instead of @Environment(\.openWindow).
     var openWindowHandler: (() -> Void)?
 
-    init() {
+    /// `home` and `demo` exist for preview mode: a throwaway home directory
+    /// and a Claude controller that never quits or relaunches the real app.
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser, demo: Bool = false) {
+        manager = ProfileManager(home: home)
+        cli = CLIProfileManager(home: home)
+        claude = ClaudeAppController(inert: demo)
         refresh()
         // The usage scan is async, so the menu bar's first frame used to
         // flash the no-data fallback icon. Reading just the active profile's

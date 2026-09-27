@@ -1,0 +1,23 @@
+.DS_Store
+.build/
+.swiftpm/
+dist/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+.idea/
+
+# Local signing material and release credentials
+.local/
+.env
+.env.*
+*.p12
+*.p8
+*.pem
+*.key
+*private-key*
+
+# Never publish saved account credentials
+auth.json
+profiles/

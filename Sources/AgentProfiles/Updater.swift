@@ -1,43 +1,29 @@
-import AppKit
-import Sparkle
 import SwiftUI
+import CodexProfilesUI
 
-/// Thin Sparkle wrapper: scheduled background checks plus a manual "Check Now",
-/// with the full download → verify → install → relaunch flow handled by
-/// Sparkle's standard UI. The feed URL and public EdDSA key live in Info.plist
-/// (`SUFeedURL`, `SUPublicEDKey`); this only owns the controller and mirrors the
-/// Settings toggle.
+/// The Claude screens still talk to `Updater.shared`. In the merged app it is
+/// a thin view onto the single Sparkle controller the app delegate owns, so
+/// the Claude and Codex update settings drive the same updater.
 ///
-/// Nil unless the app runs from a real `.app` bundle with a public key set —
-/// Sparkle needs both, and `swift run` has neither, so we simply don't start it.
+/// Nil while updates are unavailable (preview mode, or a build without a
+/// feed and public key).
 @MainActor
 final class Updater {
-    static let shared: Updater? = {
-        guard Bundle.main.bundleURL.pathExtension == "app",
-              (Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String)?.isEmpty == false
-        else { return nil }
-        return Updater()
-    }()
+    static var shared: Updater?
 
-    private let controller: SPUStandardUpdaterController
+    private let controller: UpdateController
 
-    private init() {
-        // startingUpdater: true starts the scheduled-check timer right away;
-        // interval and opt-in come from Info.plist / the toggle below.
-        controller = SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    init(controller: UpdateController) {
+        self.controller = controller
     }
 
     /// Two-way binding for the Settings toggle — Sparkle persists this itself.
     var automaticChecks: Binding<Bool> {
-        Binding(get: { self.controller.updater.automaticallyChecksForUpdates },
-                set: { self.controller.updater.automaticallyChecksForUpdates = $0 })
+        Binding(get: { self.controller.automaticallyChecks },
+                set: { self.controller.setAutomaticChecks($0) })
     }
 
-    /// Manual check. Activates first: a menu-bar (accessory) app must come
-    /// forward or Sparkle's dialog opens behind everything.
     func checkForUpdates() {
-        NSApp.activate(ignoringOtherApps: true)
-        controller.updater.checkForUpdates()
+        controller.checkForUpdates()
     }
 }

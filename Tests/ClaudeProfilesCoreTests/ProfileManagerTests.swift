@@ -1,18 +1,19 @@
-import XCTest
+import Foundation
+import Testing
 @testable import ClaudeProfilesCore
 
-final class ProfileManagerTests: XCTestCase {
+final class ProfileManagerTests {
     let fm = FileManager.default
     var home: URL!
     var pm: ProfileManager!
 
-    override func setUpWithError() throws {
+    init() throws {
         home = fm.temporaryDirectory.appendingPathComponent("claude-profiles-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
         pm = ProfileManager(home: home)
     }
 
-    override func tearDownWithError() throws {
+    deinit {
         try? fm.removeItem(at: home)
     }
 
@@ -38,104 +39,86 @@ final class ProfileManagerTests: XCTestCase {
 
     // MARK: - Sanitize
 
-    func testSanitize() {
-        XCTAssertEqual(ProfileManager.sanitize("My Profile!"), "MyProfile")
-        XCTAssertEqual(ProfileManager.sanitize("work-2_a"), "work-2_a")
-        XCTAssertEqual(ProfileManager.sanitize("user@example.com"), "user@example.com")
-        XCTAssertNil(ProfileManager.sanitize(""))
-        XCTAssertNil(ProfileManager.sanitize("💥 ééé"))
+    @Test func testSanitize() {
+        #expect(ProfileManager.sanitize("My Profile!") == "MyProfile")
+        #expect(ProfileManager.sanitize("work-2_a") == "work-2_a")
+        #expect(ProfileManager.sanitize("user@example.com") == "user@example.com")
+        #expect(ProfileManager.sanitize("") == nil)
+        #expect(ProfileManager.sanitize("💥 ééé") == nil)
     }
 
     // MARK: - Migration
 
-    func testMigrationMovesRealDirectoryAndSymlinks() throws {
+    @Test func testMigrationMovesRealDirectoryAndSymlinks() throws {
         try makeRealClaudeDir()
         try pm.migrate(name: "main")
 
-        XCTAssertTrue(isSymlink(pm.claudeDir))
-        XCTAssertEqual(pm.activeProfile(), "main")
-        XCTAssertEqual(
-            try String(contentsOf: profile("main").appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(isSymlink(pm.claudeDir))
+        #expect(pm.activeProfile() == "main")
+        #expect(try String(contentsOf: profile("main").appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
         // Readable through the symlink too.
-        XCTAssertEqual(
-            try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
     }
 
-    func testMigrationWithMissingClaudeDirCreatesEmptyProfile() throws {
+    @Test func testMigrationWithMissingClaudeDirCreatesEmptyProfile() throws {
         try pm.migrate(name: "main")
-        XCTAssertTrue(isSymlink(pm.claudeDir))
-        XCTAssertTrue(isRealDir(profile("main")))
-        XCTAssertEqual(pm.activeProfile(), "main")
+        #expect(isSymlink(pm.claudeDir))
+        #expect(isRealDir(profile("main")))
+        #expect(pm.activeProfile() == "main")
     }
 
-    func testMigrationRejectsExistingProfileName() throws {
+    @Test func testMigrationRejectsExistingProfileName() throws {
         try fm.createDirectory(at: profile("main"), withIntermediateDirectories: true)
         try makeRealClaudeDir()
 
-        XCTAssertThrowsError(try pm.migrate(name: "main")) {
-            XCTAssertEqual($0 as? ProfileError, .profileExists("main"))
-        }
+        #expect(throws: ProfileError.profileExists("main")) { try pm.migrate(name: "main") }
         // Untouched.
-        XCTAssertTrue(isRealDir(pm.claudeDir))
-        XCTAssertEqual(
-            try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(isRealDir(pm.claudeDir))
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
     }
 
-    func testMigrationRejectsInvalidName() throws {
+    @Test func testMigrationRejectsInvalidName() throws {
         try makeRealClaudeDir()
-        XCTAssertThrowsError(try pm.migrate(name: "!!!")) {
-            XCTAssertEqual($0 as? ProfileError, .invalidName)
-        }
-        XCTAssertTrue(isRealDir(pm.claudeDir))
+        #expect(throws: ProfileError.invalidName) { try pm.migrate(name: "!!!") }
+        #expect(isRealDir(pm.claudeDir))
     }
 
     // MARK: - Switching
 
-    func testSwitchRepointsSymlink() throws {
+    @Test func testSwitchRepointsSymlink() throws {
         try makeRealClaudeDir()
         try pm.migrate(name: "main")
         try pm.createProfile(name: "work")
 
         try pm.switchTo(name: "work")
-        XCTAssertEqual(pm.activeProfile(), "work")
+        #expect(pm.activeProfile() == "work")
 
         try pm.switchTo(name: "main")
-        XCTAssertEqual(pm.activeProfile(), "main")
-        XCTAssertEqual(
-            try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(pm.activeProfile() == "main")
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
     }
 
-    func testSwitchNeverClobbersRealDirectory() throws {
+    @Test func testSwitchNeverClobbersRealDirectory() throws {
         try makeRealClaudeDir()
         try fm.createDirectory(at: profile("work"), withIntermediateDirectories: true)
 
-        XCTAssertThrowsError(try pm.switchTo(name: "work")) {
-            XCTAssertEqual($0 as? ProfileError, .refusedToClobber(pm.claudeDir.path))
-        }
-        XCTAssertTrue(isRealDir(pm.claudeDir))
-        XCTAssertEqual(
-            try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(throws: ProfileError.refusedToClobber(pm.claudeDir.path)) { try pm.switchTo(name: "work") }
+        #expect(isRealDir(pm.claudeDir))
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
     }
 
-    func testSwitchToMissingProfileThrows() throws {
+    @Test func testSwitchToMissingProfileThrows() throws {
         try pm.migrate(name: "main")
-        XCTAssertThrowsError(try pm.switchTo(name: "ghost")) {
-            XCTAssertEqual($0 as? ProfileError, .profileNotFound("ghost"))
-        }
-        XCTAssertEqual(pm.activeProfile(), "main")
+        #expect(throws: ProfileError.profileNotFound("ghost")) { try pm.switchTo(name: "ghost") }
+        #expect(pm.activeProfile() == "main")
     }
 
-    func testSwitchFixesBrokenSymlink() throws {
+    @Test func testSwitchFixesBrokenSymlink() throws {
         try pm.migrate(name: "main")
         try pm.createProfile(name: "work")
         try pm.switchTo(name: "work")
@@ -143,28 +126,29 @@ final class ProfileManagerTests: XCTestCase {
         try fm.removeItem(at: profile("work")) // symlink now dangling
 
         guard case .symlink(_, false) = pm.claudeDirState() else {
-            return XCTFail("expected broken symlink, got \(pm.claudeDirState())")
+            Issue.record("expected broken symlink, got \(pm.claudeDirState())")
+            return
         }
-        XCTAssertNil(pm.activeProfile())
+        #expect(pm.activeProfile() == nil)
 
         try pm.switchTo(name: "main")
-        XCTAssertEqual(pm.activeProfile(), "main")
+        #expect(pm.activeProfile() == "main")
     }
 
     // MARK: - Listing
 
-    func testProfilesSkipsUnderscoreAndHiddenDirs() throws {
+    @Test func testProfilesSkipsUnderscoreAndHiddenDirs() throws {
         try fm.createDirectory(at: profile("alpha"), withIntermediateDirectories: true)
         try fm.createDirectory(at: profile("_shared-sessions"), withIntermediateDirectories: true)
         try fm.createDirectory(at: profile(".hidden"), withIntermediateDirectories: true)
         try write("x", to: profile("not-a-dir.txt"))
 
-        XCTAssertEqual(pm.profiles(), ["alpha"])
+        #expect(pm.profiles() == ["alpha"])
     }
 
     // MARK: - New profile + shared trees
 
-    func testCreateProfilePrelinksSharedTrees() throws {
+    @Test func testCreateProfilePrelinksSharedTrees() throws {
         for tree in ProfileManager.sessionTrees {
             try fm.createDirectory(at: pm.sharedDir.appendingPathComponent(tree), withIntermediateDirectories: true)
         }
@@ -172,72 +156,58 @@ final class ProfileManagerTests: XCTestCase {
 
         for tree in ProfileManager.sessionTrees {
             let link = profile("fresh").appendingPathComponent(tree)
-            XCTAssertTrue(isSymlink(link), "\(tree) should be pre-linked")
-            XCTAssertEqual(
-                try fm.destinationOfSymbolicLink(atPath: link.path),
-                pm.sharedDir.appendingPathComponent(tree).path
-            )
+            #expect(isSymlink(link), "\(tree) should be pre-linked")
+            #expect(try fm.destinationOfSymbolicLink(atPath: link.path)
+                == pm.sharedDir.appendingPathComponent(tree).path)
         }
     }
 
-    func testCreateProfileRejectsCollision() throws {
+    @Test func testCreateProfileRejectsCollision() throws {
         try pm.createProfile(name: "dup")
-        XCTAssertThrowsError(try pm.createProfile(name: "dup")) {
-            XCTAssertEqual($0 as? ProfileError, .profileExists("dup"))
-        }
+        #expect(throws: ProfileError.profileExists("dup")) { try pm.createProfile(name: "dup") }
     }
 
     // MARK: - Rename / delete
 
-    func testRenameInactiveProfile() throws {
+    @Test func testRenameInactiveProfile() throws {
         try pm.migrate(name: "main")
         try pm.createProfile(name: "work")
         try write("x", to: profile("work").appendingPathComponent("marker.txt"))
 
-        XCTAssertEqual(try pm.renameProfile("work", to: "office"), "office")
-        XCTAssertTrue(fm.fileExists(atPath: profile("office").appendingPathComponent("marker.txt").path))
-        XCTAssertFalse(fm.fileExists(atPath: profile("work").path))
-        XCTAssertEqual(pm.activeProfile(), "main") // untouched
+        #expect(try pm.renameProfile("work", to: "office") == "office")
+        #expect(fm.fileExists(atPath: profile("office").appendingPathComponent("marker.txt").path))
+        #expect(!fm.fileExists(atPath: profile("work").path))
+        #expect(pm.activeProfile() == "main") // untouched
     }
 
-    func testRenameActiveProfileRepointsSymlink() throws {
+    @Test func testRenameActiveProfileRepointsSymlink() throws {
         try makeRealClaudeDir()
         try pm.migrate(name: "main")
         try pm.renameProfile("main", to: "primary")
-        XCTAssertEqual(pm.activeProfile(), "primary")
-        XCTAssertEqual(
-            try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8),
-            "cookie-data"
-        )
+        #expect(pm.activeProfile() == "primary")
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
     }
 
-    func testRenameRejectsCollisionAndUnknown() throws {
+    @Test func testRenameRejectsCollisionAndUnknown() throws {
         try pm.createProfile(name: "a")
         try pm.createProfile(name: "b")
-        XCTAssertThrowsError(try pm.renameProfile("a", to: "b")) {
-            XCTAssertEqual($0 as? ProfileError, .profileExists("b"))
-        }
-        XCTAssertThrowsError(try pm.renameProfile("ghost", to: "x")) {
-            XCTAssertEqual($0 as? ProfileError, .profileNotFound("ghost"))
-        }
-        XCTAssertEqual(try pm.renameProfile("a", to: "a"), "a") // no-op
+        #expect(throws: ProfileError.profileExists("b")) { try pm.renameProfile("a", to: "b") }
+        #expect(throws: ProfileError.profileNotFound("ghost")) { try pm.renameProfile("ghost", to: "x") }
+        #expect(try pm.renameProfile("a", to: "a") == "a") // no-op
     }
 
-    func testDeleteProfileRefusesActiveDeletesInactive() throws {
+    @Test func testDeleteProfileRefusesActiveDeletesInactive() throws {
         try pm.migrate(name: "main")
         try pm.createProfile(name: "gone")
 
-        XCTAssertThrowsError(try pm.deleteProfile(name: "main")) {
-            XCTAssertEqual($0 as? ProfileError, .profileIsActive("main"))
-        }
+        #expect(throws: ProfileError.profileIsActive("main")) { try pm.deleteProfile(name: "main") }
         try pm.deleteProfile(name: "gone")
-        XCTAssertEqual(pm.profiles(), ["main"])
-        XCTAssertThrowsError(try pm.deleteProfile(name: "gone")) {
-            XCTAssertEqual($0 as? ProfileError, .profileNotFound("gone"))
-        }
+        #expect(pm.profiles() == ["main"])
+        #expect(throws: ProfileError.profileNotFound("gone")) { try pm.deleteProfile(name: "gone") }
     }
 
-    func testDeleteProfileKeepsSharedHistory() throws {
+    @Test func testDeleteProfileKeepsSharedHistory() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
         try pm.migrate(name: "main") // makes "main" active so a/b are deletable
@@ -245,8 +215,8 @@ final class ProfileManagerTests: XCTestCase {
         try pm.deleteProfile(name: "b")
         // b's sessions were merged into the shared master before; still there.
         let master = pm.sharedDir.appendingPathComponent("\(ProfileManager.sessionTrees[0])/acct1/org1")
-        XCTAssertTrue(fm.fileExists(atPath: master.appendingPathComponent("local_3.json").path),
-                      "deleting a profile must not touch shared history")
+        #expect(fm.fileExists(atPath: master.appendingPathComponent("local_3.json").path),
+                "deleting a profile must not touch shared history")
     }
 
     // MARK: - Shared history
@@ -260,29 +230,25 @@ final class ProfileManagerTests: XCTestCase {
         try write("bx", to: profile("b").appendingPathComponent("\(agent)/acct2/org2/agent.json"))
     }
 
-    func testEnableSharedHistoryMergesLinksAndBacksUp() throws {
+    @Test func testEnableSharedHistoryMergesLinksAndBacksUp() throws {
         try seedTwoProfiles()
         let code = ProfileManager.sessionTrees[0], agent = ProfileManager.sessionTrees[1]
 
         let backup = try pm.enableSharedHistory()
 
         // Backup exists and holds the originals.
-        let backupDir = try XCTUnwrap(backup)
-        XCTAssertTrue(backupDir.lastPathComponent.hasPrefix("claude-session-backup-"))
-        XCTAssertEqual(
-            try String(contentsOf: backupDir.appendingPathComponent("b/\(code)/acct2/org2/local_3.json"), encoding: .utf8),
-            "b1"
-        )
+        let backupDir = try #require(backup)
+        #expect(backupDir.lastPathComponent.hasPrefix("claude-session-backup-"))
+        #expect(try String(contentsOf: backupDir.appendingPathComponent("b/\(code)/acct2/org2/local_3.json"), encoding: .utf8)
+            == "b1")
 
         // Every profile tree is now a symlink into _shared-sessions (missing ones included).
         for profileName in ["a", "b"] {
             for tree in ProfileManager.sessionTrees {
                 let link = profile(profileName).appendingPathComponent(tree)
-                XCTAssertTrue(isSymlink(link), "\(profileName)/\(tree) should be a symlink")
-                XCTAssertEqual(
-                    try fm.destinationOfSymbolicLink(atPath: link.path),
-                    pm.sharedDir.appendingPathComponent(tree).path
-                )
+                #expect(isSymlink(link), "\(profileName)/\(tree) should be a symlink")
+                #expect(try fm.destinationOfSymbolicLink(atPath: link.path)
+                    == pm.sharedDir.appendingPathComponent(tree).path)
             }
         }
 
@@ -290,56 +256,50 @@ final class ProfileManagerTests: XCTestCase {
         // acct2/org2 is now a symlink to the master.
         let sharedCode = pm.sharedDir.appendingPathComponent(code)
         let master = sharedCode.appendingPathComponent("acct1/org1")
-        XCTAssertTrue(isRealDir(master))
+        #expect(isRealDir(master))
         for f in ["local_1.json", "local_2.json", "local_3.json"] {
-            XCTAssertTrue(fm.fileExists(atPath: master.appendingPathComponent(f).path), "\(f) missing in master")
+            #expect(fm.fileExists(atPath: master.appendingPathComponent(f).path), "\(f) missing in master")
         }
         let other = sharedCode.appendingPathComponent("acct2/org2")
-        XCTAssertTrue(isSymlink(other))
-        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: other.path), master.path)
+        #expect(isSymlink(other))
+        #expect(try fm.destinationOfSymbolicLink(atPath: other.path) == master.path)
 
         // All sessions visible through profile b's path (symlink chain).
-        XCTAssertTrue(fm.fileExists(
+        #expect(fm.fileExists(
             atPath: profile("b").appendingPathComponent("\(code)/acct2/org2/local_1.json").path
         ))
 
         // Single org dir in the agent tree: merged, no account-level linking needed.
-        XCTAssertEqual(
-            try String(contentsOf: pm.sharedDir.appendingPathComponent("\(agent)/acct2/org2/agent.json"), encoding: .utf8),
-            "bx"
-        )
-        XCTAssertTrue(pm.sharedHistoryEnabled)
+        #expect(try String(contentsOf: pm.sharedDir.appendingPathComponent("\(agent)/acct2/org2/agent.json"), encoding: .utf8)
+            == "bx")
+        #expect(pm.sharedHistoryEnabled)
     }
 
-    func testEnableSharedHistoryNeverOverwrites() throws {
+    @Test func testEnableSharedHistoryNeverOverwrites() throws {
         let code = ProfileManager.sessionTrees[0]
         try write("A-version", to: profile("a").appendingPathComponent("\(code)/acct/org/same.json"))
         try write("B-version", to: profile("b").appendingPathComponent("\(code)/acct/org/same.json"))
 
-        let backup = try XCTUnwrap(try pm.enableSharedHistory())
+        let backup = try #require(try pm.enableSharedHistory())
 
         // First merge (a, alphabetical) wins; b's copy never overwrites — but survives in backup.
-        XCTAssertEqual(
-            try String(contentsOf: pm.sharedDir.appendingPathComponent("\(code)/acct/org/same.json"), encoding: .utf8),
-            "A-version"
-        )
-        XCTAssertEqual(
-            try String(contentsOf: backup.appendingPathComponent("b/\(code)/acct/org/same.json"), encoding: .utf8),
-            "B-version"
-        )
+        #expect(try String(contentsOf: pm.sharedDir.appendingPathComponent("\(code)/acct/org/same.json"), encoding: .utf8)
+            == "A-version")
+        #expect(try String(contentsOf: backup.appendingPathComponent("b/\(code)/acct/org/same.json"), encoding: .utf8)
+            == "B-version")
     }
 
-    func testHasAccountIDsRequiresBothLoginFiles() throws {
+    @Test func testHasAccountIDsRequiresBothLoginFiles() throws {
         let org = "cccccccc-cccc-cccc-cccc-cccccccccccc"
         try write("x", to: profile("p").appendingPathComponent("placeholder"))
-        XCTAssertFalse(pm.hasAccountIDs(profile: "p"))
+        #expect(!pm.hasAccountIDs(profile: "p"))
         try write(#"{"ownerAccountId":"acct"}"#, to: profile("p").appendingPathComponent("cowork-enabled-cli-ops.json"))
-        XCTAssertFalse(pm.hasAccountIDs(profile: "p"), "needs org ids too")
+        #expect(!pm.hasAccountIDs(profile: "p"), "needs org ids too")
         try write(#"{"dxt:desk:\#(org)":1}"#, to: profile("p").appendingPathComponent("config.json"))
-        XCTAssertTrue(pm.hasAccountIDs(profile: "p"))
+        #expect(pm.hasAccountIDs(profile: "p"))
     }
 
-    func testDisableSharedHistoryGivesEachProfileACopy() throws {
+    @Test func testDisableSharedHistoryGivesEachProfileACopy() throws {
         let code = ProfileManager.sessionTrees[0]
         let orgA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
         let orgB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -354,23 +314,23 @@ final class ProfileManagerTests: XCTestCase {
         try pm.enableSharedHistory()
         try pm.disableSharedHistory()
 
-        XCTAssertFalse(pm.sharedHistoryEnabled)
-        XCTAssertFalse(fm.fileExists(atPath: pm.sharedDir.path), "shared dir must be removed")
+        #expect(!pm.sharedHistoryEnabled)
+        #expect(!fm.fileExists(atPath: pm.sharedDir.path), "shared dir must be removed")
         // Both profiles own real trees again — with the full combined copy
         // under their own account/org ids, not links into the removed dir.
         for (p, acct, org) in [("a", "acctA", orgA), ("b", "acctB", orgB)] {
             let tree = profile(p).appendingPathComponent(code)
-            XCTAssertTrue(isRealDir(tree), "\(p)'s tree should be a real directory")
+            #expect(isRealDir(tree), "\(p)'s tree should be a real directory")
             let orgDir = tree.appendingPathComponent("\(acct)/\(org)")
-            XCTAssertFalse(isSymlink(orgDir))
+            #expect(!isSymlink(orgDir))
             for f in ["one.json", "two.json", "three.json"] {
-                XCTAssertTrue(fm.fileExists(atPath: orgDir.appendingPathComponent(f).path),
-                              "\(p) should keep \(f)")
+                #expect(fm.fileExists(atPath: orgDir.appendingPathComponent(f).path),
+                        "\(p) should keep \(f)")
             }
         }
     }
 
-    func testRerunLinksAccountThatLoggedInAfterEnable() throws {
+    @Test func testRerunLinksAccountThatLoggedInAfterEnable() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
 
@@ -383,16 +343,16 @@ final class ProfileManagerTests: XCTestCase {
 
         let master = pm.sharedDir.appendingPathComponent("\(code)/acct1/org1")
         let newcomer = pm.sharedDir.appendingPathComponent("\(code)/acct3/org3")
-        XCTAssertTrue(isSymlink(newcomer), "new account's org dir should be linked to master")
-        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: newcomer.path), master.path)
-        XCTAssertTrue(fm.fileExists(atPath: master.appendingPathComponent("local_9.json").path))
+        #expect(isSymlink(newcomer), "new account's org dir should be linked to master")
+        #expect(try fm.destinationOfSymbolicLink(atPath: newcomer.path) == master.path)
+        #expect(fm.fileExists(atPath: master.appendingPathComponent("local_9.json").path))
     }
 
     /// An account that logged in but never opened a Code/agent session has no
     /// <account>/<org> dir — its sidebar would stay empty forever. The uuids Claude
     /// writes on login (cowork-enabled-cli-ops.json + config.json dxt keys) let the
     /// merge pre-link the org dir to the master.
-    func testPrelinksAccountThatNeverOpenedASession() throws {
+    @Test func testPrelinksAccountThatNeverOpenedASession() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
         try pm.createProfile(name: "fresh")
@@ -409,21 +369,21 @@ final class ProfileManagerTests: XCTestCase {
         let master = pm.sharedDir.appendingPathComponent("\(code)/acct1/org1")
         let org = pm.sharedDir
             .appendingPathComponent("\(code)/acct-fresh/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-        XCTAssertTrue(isSymlink(org), "org dir must be pre-linked to the master")
-        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: org.path), master.path)
+        #expect(isSymlink(org), "org dir must be pre-linked to the master")
+        #expect(try fm.destinationOfSymbolicLink(atPath: org.path) == master.path)
         // Combined list readable through the fresh profile's own path.
-        XCTAssertTrue(fm.fileExists(atPath: profile("fresh")
+        #expect(fm.fileExists(atPath: profile("fresh")
             .appendingPathComponent("\(code)/acct-fresh/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/local_1.json").path))
 
         // Idempotent: re-run leaves the link alone.
         try pm.enableSharedHistory()
-        XCTAssertTrue(isSymlink(org))
+        #expect(isSymlink(org))
     }
 
     /// Claude Desktop stays resident in the background, so the quit-time merge may
     /// never get a window. prelinkKnownAccounts is the symlink-only subset that is
     /// safe to run while Claude is alive.
-    func testPrelinkKnownAccountsStandalone() throws {
+    @Test func testPrelinkKnownAccountsStandalone() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
         try pm.createProfile(name: "fresh")
@@ -437,45 +397,43 @@ final class ProfileManagerTests: XCTestCase {
         let code = ProfileManager.sessionTrees[0]
         let org = pm.sharedDir
             .appendingPathComponent("\(code)/acct-live/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-        XCTAssertTrue(isSymlink(org))
-        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: org.path),
-                       pm.sharedDir.appendingPathComponent("\(code)/acct1/org1").path)
+        #expect(isSymlink(org))
+        #expect(try fm.destinationOfSymbolicLink(atPath: org.path)
+            == pm.sharedDir.appendingPathComponent("\(code)/acct1/org1").path)
 
         // A pending merge (two real org dirs) makes the master ambiguous — no-op then.
         try write("x", to: pm.sharedDir.appendingPathComponent("\(code)/acct-other/org-other/local_z.json"))
         try write(#"{"ownerAccountId":"acct-late"}"#,
                   to: profile("fresh").appendingPathComponent("cowork-enabled-cli-ops.json"))
         try pm.prelinkKnownAccounts()
-        XCTAssertFalse(fm.fileExists(atPath: pm.sharedDir.appendingPathComponent("\(code)/acct-late").path),
-                       "must not pick a master while a merge is pending")
+        #expect(!fm.fileExists(atPath: pm.sharedDir.appendingPathComponent("\(code)/acct-late").path),
+                "must not pick a master while a merge is pending")
     }
 
-    func testEnableSharedHistoryIsIdempotent() throws {
+    @Test func testEnableSharedHistoryIsIdempotent() throws {
         try seedTwoProfiles()
-        XCTAssertNotNil(try pm.enableSharedHistory())
+        #expect(try pm.enableSharedHistory() != nil)
 
         let secondBackup = try pm.enableSharedHistory(now: Date().addingTimeInterval(60))
-        XCTAssertNil(secondBackup, "re-run must be a no-op")
+        #expect(secondBackup == nil, "re-run must be a no-op")
 
         let backups = try fm.contentsOfDirectory(atPath: home.path)
             .filter { $0.hasPrefix("claude-session-backup-") }
-        XCTAssertEqual(backups.count, 1)
+        #expect(backups.count == 1)
 
         // Structure intact after re-run.
         let master = pm.sharedDir.appendingPathComponent("\(ProfileManager.sessionTrees[0])/acct1/org1")
-        XCTAssertTrue(isRealDir(master))
-        XCTAssertEqual(
-            try fm.contentsOfDirectory(atPath: master.path).sorted(),
-            ["local_1.json", "local_2.json", "local_3.json"]
-        )
+        #expect(isRealDir(master))
+        #expect(try fm.contentsOfDirectory(atPath: master.path).sorted()
+            == ["local_1.json", "local_2.json", "local_3.json"])
     }
 
     // MARK: - Restore from backup
 
-    func testRestoreSeparatesPerAccount() throws {
+    @Test func testRestoreSeparatesPerAccount() throws {
         try seedTwoProfiles()
         let code = ProfileManager.sessionTrees[0], agent = ProfileManager.sessionTrees[1]
-        let backup = try XCTUnwrap(try pm.enableSharedHistory())
+        let backup = try #require(try pm.enableSharedHistory())
 
         // A session created while sharing was on lands in the shared master, via a's symlink.
         try write("post", to: profile("a").appendingPathComponent("\(code)/acct1/org1/post_enable.json"))
@@ -483,60 +441,58 @@ final class ProfileManagerTests: XCTestCase {
         try pm.restoreFromBackup(backup)
 
         // Sharing is off; the pile is archived (not deleted) with the post-enable session inside.
-        XCTAssertFalse(pm.sharedHistoryEnabled)
-        XCTAssertFalse(fm.fileExists(atPath: pm.sharedDir.path))
-        let archive = try XCTUnwrap(try fm.contentsOfDirectory(atPath: home.path)
+        #expect(!pm.sharedHistoryEnabled)
+        #expect(!fm.fileExists(atPath: pm.sharedDir.path))
+        let archive = try #require(try fm.contentsOfDirectory(atPath: home.path)
             .first { $0.hasPrefix("claude-shared-archive-") })
-        XCTAssertTrue(fm.fileExists(atPath: home.appendingPathComponent(archive)
+        #expect(fm.fileExists(atPath: home.appendingPathComponent(archive)
             .appendingPathComponent("\(code)/acct1/org1/post_enable.json").path))
 
         // Each profile is a real tree with EXACTLY its own pre-enable sessions — no cross-mixing.
         let aTree = profile("a").appendingPathComponent(code)
-        XCTAssertTrue(isRealDir(aTree))
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: aTree.appendingPathComponent("acct1/org1").path).sorted(),
-                       ["local_1.json", "local_2.json"])
-        XCTAssertFalse(fm.fileExists(atPath: aTree.appendingPathComponent("acct2").path),
-                       "a must not gain b's account")
-        XCTAssertFalse(fm.fileExists(atPath: aTree.appendingPathComponent("acct1/org1/post_enable.json").path),
-                       "post-enable session is archived, not restored")
+        #expect(isRealDir(aTree))
+        #expect(try fm.contentsOfDirectory(atPath: aTree.appendingPathComponent("acct1/org1").path).sorted()
+            == ["local_1.json", "local_2.json"])
+        #expect(!fm.fileExists(atPath: aTree.appendingPathComponent("acct2").path),
+                "a must not gain b's account")
+        #expect(!fm.fileExists(atPath: aTree.appendingPathComponent("acct1/org1/post_enable.json").path),
+                "post-enable session is archived, not restored")
 
         let bCode = profile("b").appendingPathComponent(code)
-        XCTAssertTrue(isRealDir(bCode))
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: bCode.appendingPathComponent("acct2/org2").path).sorted(),
-                       ["local_3.json"])
-        XCTAssertTrue(fm.fileExists(atPath: profile("b")
+        #expect(isRealDir(bCode))
+        #expect(try fm.contentsOfDirectory(atPath: bCode.appendingPathComponent("acct2/org2").path).sorted()
+            == ["local_3.json"])
+        #expect(fm.fileExists(atPath: profile("b")
             .appendingPathComponent("\(agent)/acct2/org2/agent.json").path))
     }
 
-    func testRestoreGivesEmptyTreeToProfileNotInBackup() throws {
+    @Test func testRestoreGivesEmptyTreeToProfileNotInBackup() throws {
         try seedTwoProfiles()
-        let backup = try XCTUnwrap(try pm.enableSharedHistory())
+        let backup = try #require(try pm.enableSharedHistory())
         try pm.createProfile(name: "c") // created after enable → symlinked, absent from backup
 
         try pm.restoreFromBackup(backup)
 
         for tree in ProfileManager.sessionTrees {
             let cTree = profile("c").appendingPathComponent(tree)
-            XCTAssertTrue(isRealDir(cTree), "c's \(tree) should be a real dir")
-            XCTAssertEqual(try fm.contentsOfDirectory(atPath: cTree.path), [], "and empty")
+            #expect(isRealDir(cTree), "c's \(tree) should be a real dir")
+            #expect(try fm.contentsOfDirectory(atPath: cTree.path) == [], "and empty")
         }
     }
 
-    func testRestoreRejectsInvalidBackup() throws {
+    @Test func testRestoreRejectsInvalidBackup() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
         let bogus = home.appendingPathComponent("not-a-backup")
         try write("junk", to: bogus.appendingPathComponent("readme.txt"))
 
-        XCTAssertThrowsError(try pm.restoreFromBackup(bogus)) { error in
-            XCTAssertEqual(error as? ProfileError, .invalidBackup("not-a-backup"))
-        }
+        #expect(throws: ProfileError.invalidBackup("not-a-backup")) { try pm.restoreFromBackup(bogus) }
         // Nothing touched: sharing still on, profiles still symlinked.
-        XCTAssertTrue(pm.sharedHistoryEnabled)
-        XCTAssertTrue(isSymlink(profile("a").appendingPathComponent(ProfileManager.sessionTrees[0])))
+        #expect(pm.sharedHistoryEnabled)
+        #expect(isSymlink(profile("a").appendingPathComponent(ProfileManager.sessionTrees[0])))
     }
 
-    func testRestoreBacksUpCurrentRealTreesFirst() throws {
+    @Test func testRestoreBacksUpCurrentRealTreesFirst() throws {
         // One profile with login ids so disable leaves it a real tree to protect.
         let code = ProfileManager.sessionTrees[0]
         let orgA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -544,9 +500,9 @@ final class ProfileManagerTests: XCTestCase {
         try write(#"{"ownerAccountId":"acctA"}"#, to: profile("a").appendingPathComponent("cowork-enabled-cli-ops.json"))
         try write(#"{"dxt:desk:\#(orgA)":1}"#, to: profile("a").appendingPathComponent("config.json"))
 
-        let backup = try XCTUnwrap(try pm.enableSharedHistory())
+        let backup = try #require(try pm.enableSharedHistory())
         try pm.disableSharedHistory()                 // a's tree is a real dir again
-        XCTAssertTrue(isRealDir(profile("a").appendingPathComponent(code)))
+        #expect(isRealDir(profile("a").appendingPathComponent(code)))
 
         // A session created after disable — only in the live tree, not in the enable-time backup.
         try write("after", to: profile("a").appendingPathComponent("\(code)/acctA/\(orgA)/after_disable.json"))
@@ -554,14 +510,14 @@ final class ProfileManagerTests: XCTestCase {
         try pm.restoreFromBackup(backup)
 
         // The prerestore backup captured the live tree (incl. after_disable) → restore is reversible.
-        let prerestore = try XCTUnwrap(try fm.contentsOfDirectory(atPath: home.path)
+        let prerestore = try #require(try fm.contentsOfDirectory(atPath: home.path)
             .first { $0.hasPrefix("claude-session-prerestore-") })
-        XCTAssertTrue(fm.fileExists(atPath: home.appendingPathComponent(prerestore)
+        #expect(fm.fileExists(atPath: home.appendingPathComponent(prerestore)
             .appendingPathComponent("a/\(code)/acctA/\(orgA)/after_disable.json").path))
 
         // And a is back to exactly the enable-time backup (after_disable gone from the live tree).
         let aOrg = profile("a").appendingPathComponent("\(code)/acctA/\(orgA)")
-        XCTAssertEqual(try fm.contentsOfDirectory(atPath: aOrg.path).sorted(), ["one.json"])
+        #expect(try fm.contentsOfDirectory(atPath: aOrg.path).sorted() == ["one.json"])
     }
 
     // MARK: - Switch + shared-history visibility
@@ -604,7 +560,7 @@ final class ProfileManagerTests: XCTestCase {
     /// Switching to any profile must hand it the real master pile — never a symlink
     /// Claude's own writes could shadow (the "session hilang after switch" bug) — and
     /// every shared session stays visible through it.
-    func testSwitchGivesActiveProfileTheRealMasterAndKeepsSessionsVisible() throws {
+    @Test func testSwitchGivesActiveProfileTheRealMasterAndKeepsSessionsVisible() throws {
         let main = Acct(profile: "main", acct: "acct-main", org: "11111111-1111-1111-1111-111111111111")
         let work = Acct(profile: "work", acct: "acct-work", org: "22222222-2222-2222-2222-222222222222")
         let other = Acct(profile: "other", acct: "acct-other", org: "33333333-3333-3333-3333-333333333333")
@@ -627,18 +583,18 @@ final class ProfileManagerTests: XCTestCase {
             let id = "s-\(next.profile)-\(i + 1)"
             try claudeWrite(id, as: next); all.insert(id)
 
-            XCTAssertTrue(isRealDir(activeOrg(next)),
-                "switch #\(i + 1): \(next.profile)'s org dir must be the real master, not a symlink")
+            #expect(isRealDir(activeOrg(next)),
+          "switch #\(i + 1): \(next.profile)'s org dir must be the real master, not a symlink")
             let visible = visibleSessions(next)
-            XCTAssertEqual(visible, all,
-                "switch #\(i + 1) to \(next.profile): missing \(all.subtracting(visible))")
+            #expect(visible == all,
+         "switch #\(i + 1) to \(next.profile): missing \(all.subtracting(visible))")
         }
     }
 
     /// An account that logged in and opened a session before it was linked owns a
     /// real "island" of its own sessions, disconnected from the shared pile. The
     /// next promoting relink must fold the pile into it — nothing lost, all visible.
-    func testPromotingRelinkHealsAnIslandedAccount() throws {
+    @Test func testPromotingRelinkHealsAnIslandedAccount() throws {
         let main = Acct(profile: "main", acct: "acct-main", org: "11111111-1111-1111-1111-111111111111")
         let work = Acct(profile: "work", acct: "acct-work", org: "22222222-2222-2222-2222-222222222222")
 
@@ -659,24 +615,21 @@ final class ProfileManagerTests: XCTestCase {
 
         try pm.enableSharedHistory(promoteActive: true)    // heal
 
-        XCTAssertTrue(isRealDir(island), "work must own the real master after the relink")
-        XCTAssertEqual(Set(try fm.contentsOfDirectory(atPath: island.path)),
-                       ["m1", "m2", "w1"], "island folded into the shared pile, nothing lost")
+        #expect(isRealDir(island), "work must own the real master after the relink")
+        #expect(Set(try fm.contentsOfDirectory(atPath: island.path))
+            == ["m1", "m2", "w1"], "island folded into the shared pile, nothing lost")
     }
 
     // MARK: - Display order
 
-    func testOrderedRespectsSavedOrderAndPutsUnknownNamesLast() throws {
+    @Test func testOrderedRespectsSavedOrderAndPutsUnknownNamesLast() throws {
         try pm.saveOrder(["charlie", "alpha"])
         // charlie/alpha follow the saved order; bravo/delta are unknown, so they
         // sort to the end alphabetically. round-trips through the file on disk.
-        XCTAssertEqual(pm.savedOrder(), ["charlie", "alpha"])
-        XCTAssertEqual(
-            pm.ordered(["alpha", "bravo", "charlie", "delta"]),
-            ["charlie", "alpha", "bravo", "delta"]
-        )
+        #expect(pm.savedOrder() == ["charlie", "alpha"])
+        #expect(pm.ordered(["alpha", "bravo", "charlie", "delta"]) == ["charlie", "alpha", "bravo", "delta"])
         // No file yet on a fresh manager → pure alphabetical.
         let fresh = ProfileManager(home: fm.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        XCTAssertEqual(fresh.ordered(["b", "a"]), ["a", "b"])
+        #expect(fresh.ordered(["b", "a"]) == ["a", "b"])
     }
 }

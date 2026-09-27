@@ -5,19 +5,19 @@ import Sparkle
 import SwiftUI
 
 @MainActor
-final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
-    @Published private(set) var canCheckForUpdates = false
-    @Published private(set) var automaticallyChecks = false
-    @Published private(set) var automaticallyInstalls = false
-    @Published private(set) var unavailableReason: String?
+public final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
+    @Published public private(set) var canCheckForUpdates = false
+    @Published public private(set) var automaticallyChecks = false
+    @Published public private(set) var automaticallyInstalls = false
+    @Published public private(set) var unavailableReason: String?
 
     private var controller: SPUStandardUpdaterController?
     private let canRelaunch: () -> Bool
     private var deferredRelaunch: Task<Void, Never>?
 
-    var isAvailable: Bool { controller != nil && unavailableReason == nil }
+    public var isAvailable: Bool { controller != nil && unavailableReason == nil }
 
-    init(enabled: Bool, canRelaunch: @escaping () -> Bool) {
+    public init(enabled: Bool, canRelaunch: @escaping () -> Bool) {
         self.canRelaunch = canRelaunch
         super.init()
         guard enabled else {
@@ -49,29 +49,29 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
         }
     }
 
-    func checkForUpdates() {
+    public func checkForUpdates() {
         guard canCheckForUpdates, canRelaunch() else { return }
         NSApp.activate(ignoringOtherApps: true)
         controller?.checkForUpdates(nil)
     }
 
-    func setAutomaticChecks(_ enabled: Bool) {
+    public func setAutomaticChecks(_ enabled: Bool) {
         controller?.updater.automaticallyChecksForUpdates = enabled
     }
 
-    func setAutomaticInstallation(_ enabled: Bool) {
+    public func setAutomaticInstallation(_ enabled: Bool) {
         controller?.updater.automaticallyDownloadsUpdates = enabled
     }
 
-    func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+    public func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
         guard canRelaunch() else {
-            throw NSError(domain: "dev.aji.CodexProfiles.Update", code: 1, userInfo: [
+            throw NSError(domain: "dev.aji.AgentProfiles.Update", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Finish the current account operation before updating the app.",
             ])
         }
     }
 
-    func updater(
+    public func updater(
         _ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem,
         untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {

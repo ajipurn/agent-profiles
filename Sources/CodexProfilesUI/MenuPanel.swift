@@ -1,7 +1,7 @@
 import SwiftUI
 import CodexProfilesCore
 
-struct MenuPanel: View {
+public struct MenuPanel: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var nameFieldFocused: Bool
@@ -9,7 +9,9 @@ struct MenuPanel: View {
     @State private var profileConfirmingDelete: Profile?
     @State private var measuredContentHeight: CGFloat = 0
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 panelContent
@@ -109,9 +111,9 @@ struct MenuPanel: View {
                     .frame(width: 26, height: 26)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(AvatarPalette.gradient(for: "Codex Profiles"))
+                            .fill(AvatarPalette.gradient(for: "Codex"))
                     )
-                Text("Codex Profiles")
+                Text("Codex")
                     .font(PanelDS.title)
                 Spacer()
             }
@@ -735,7 +737,7 @@ struct MenuPanel: View {
                 }
                 Text("Shortcuts: ⌘F Search · ⌘N Add · ⌘R Refresh")
                 Divider()
-                Button("Quit Codex Profiles") { model.quit() }
+                Button("Quit Agent Profiles") { model.quit() }
                     .keyboardShortcut("q", modifiers: .command)
             } label: {
                 Label("Settings", systemImage: "gearshape")
@@ -746,7 +748,7 @@ struct MenuPanel: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize(horizontal: true, vertical: false)
-            .accessibilityLabel("Codex Profiles settings")
+            .accessibilityLabel("Codex settings")
             .disabled(model.isBusy || model.pendingNewLogin)
         }
         .font(PanelDS.caption)

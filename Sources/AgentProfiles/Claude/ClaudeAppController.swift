@@ -7,8 +7,12 @@ import UserNotifications
 final class ClaudeAppController {
     let appURL: URL?
     let bundleID: String?
+    /// Preview mode: behaves as if Claude quit and relaunched, without
+    /// touching the real app.
+    let isInert: Bool
 
-    init() {
+    init(inert: Bool = false) {
+        isInert = inert
         let candidates = [
             URL(fileURLWithPath: "/Applications/Claude.app"),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Claude.app"),
@@ -19,12 +23,13 @@ final class ClaudeAppController {
     }
 
     var isRunning: Bool {
-        guard let bundleID else { return false }
+        guard !isInert, let bundleID else { return false }
         return NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundleID }
     }
 
     /// Returns true when Claude ended up not running.
     func quit() async -> Bool {
+        if isInert { return true }
         guard let bundleID else { return false }
         let running = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == bundleID }
         guard !running.isEmpty else { return true }
@@ -41,7 +46,7 @@ final class ClaudeAppController {
     }
 
     func relaunch() {
-        guard let appURL else { return }
+        guard !isInert, let appURL else { return }
         NSWorkspace.shared.openApplication(at: appURL, configuration: NSWorkspace.OpenConfiguration())
     }
 
@@ -53,7 +58,7 @@ enum Notifier {
     static func post(_ title: String, _ body: String = "", userInfo: [AnyHashable: Any] = [:]) {
         // UNUserNotificationCenter requires a real .app bundle; `swift run` has none.
         guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundleURL.pathExtension == "app" else {
-            NSLog("[Claude Profiles] %@ — %@", title, body)
+            NSLog("[Agent Profiles] %@ — %@", title, body)
             return
         }
         let center = UNUserNotificationCenter.current()

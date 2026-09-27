@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import ClaudeProfilesCore
 
 let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-let githubURL = URL(string: "https://github.com/ajipurn/claude-profiles")!
+let githubURL = URL(string: "https://github.com/ajipurn/agent-profiles")!
 
 /// The panel's content, redesigned for a regular window: same visual language
 /// (avatars, accent, quiet hover reveals), more air. Context switches become
@@ -280,7 +280,7 @@ struct WindowView: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Text("Claude Profiles \(appVersion)")
+            Text("Agent Profiles \(appVersion)")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
             Spacer()
@@ -393,12 +393,12 @@ struct LaunchAtLoginToggle: View {
     var body: some View {
         Toggle("Launch at login", isOn: $enabled)
             .toggleStyle(RaisedToggleStyle())
-            .onChange(of: enabled) { on in
+            .onChange(of: enabled) { _, on in
                 do {
                     if on { try SMAppService.mainApp.register() }
                     else { try SMAppService.mainApp.unregister() }
                 } catch {
-                    NSLog("[Claude Profiles] Launch at login failed: %@", error.localizedDescription)
+                    NSLog("[Agent Profiles] Launch at login failed: %@", error.localizedDescription)
                     enabled = SMAppService.mainApp.status == .enabled
                 }
             }
@@ -858,7 +858,7 @@ struct AboutView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 64, height: 64)
-            Text("Claude Profiles")
+            Text("Agent Profiles")
                 .font(.system(size: 15, weight: .semibold))
             Text("Version \(appVersion)")
                 .font(.system(size: 11))
@@ -875,10 +875,10 @@ struct AboutView: View {
             .frame(height: 44)
 
             Link(destination: githubURL) {
-                Label("ajipurn/claude-profiles", systemImage: "link")
+                Label("ajipurn/agent-profiles", systemImage: "link")
                     .font(.system(size: 11))
             }
-            Text("Not affiliated with Anthropic.")
+            Text("Not affiliated with Anthropic or OpenAI.")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
 

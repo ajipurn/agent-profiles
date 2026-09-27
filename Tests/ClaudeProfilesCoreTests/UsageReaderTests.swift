@@ -1,16 +1,17 @@
-import XCTest
+import Foundation
+import Testing
 @testable import ClaudeProfilesCore
 
-final class UsageReaderTests: XCTestCase {
+final class UsageReaderTests {
     let fm = FileManager.default
     var home: URL!
 
-    override func setUpWithError() throws {
+    init() throws {
         home = fm.temporaryDirectory.appendingPathComponent("usage-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws {
+    deinit {
         try? fm.removeItem(at: home)
     }
 
@@ -50,36 +51,36 @@ final class UsageReaderTests: XCTestCase {
         return file
     }
 
-    func testReadsZstdCompressedUsageEntry() throws {
+    @Test func testReadsZstdCompressedUsageEntry() throws {
         _ = try writeEntry("aa_0", org: org, body: zstdBody)
-        let usage = try XCTUnwrap(UsageReader.usage(inProfileDir: home))
-        XCTAssertEqual(usage.orgID, org)
-        XCTAssertEqual(usage.fiveHour?.percent, 42.0)
-        XCTAssertEqual(usage.sevenDay?.percent, 7.0)
-        XCTAssertEqual(usage.fiveHour?.expired, false) // resets in 2099
-        XCTAssertNotNil(usage.fiveHour?.resetsAt)
+        let usage = try #require(UsageReader.usage(inProfileDir: home))
+        #expect(usage.orgID == org)
+        #expect(usage.fiveHour?.percent == 42.0)
+        #expect(usage.sevenDay?.percent == 7.0)
+        #expect(usage.fiveHour?.expired == false) // resets in 2099
+        #expect(usage.fiveHour?.resetsAt != nil)
     }
 
-    func testReadsUncompressedBodyToo() throws {
+    @Test func testReadsUncompressedBodyToo() throws {
         let plain = #"{"five_hour":{"utilization":13.0,"resets_at":null},"seven_day":null}"#
         _ = try writeEntry("bb_0", org: org, body: plain.data(using: .utf8)!)
-        let usage = try XCTUnwrap(UsageReader.usage(inProfileDir: home))
-        XCTAssertEqual(usage.fiveHour?.percent, 13.0)
-        XCTAssertNil(usage.sevenDay)
+        let usage = try #require(UsageReader.usage(inProfileDir: home))
+        #expect(usage.fiveHour?.percent == 13.0)
+        #expect(usage.sevenDay == nil)
     }
 
-    func testPrefersMatchingOrgThenNewest() throws {
+    @Test func testPrefersMatchingOrgThenNewest() throws {
         // Newer entry for a foreign org, older entry for "our" org.
         _ = try writeEntry("new_0", org: otherOrg, body: zstdBody, mtime: Date())
         _ = try writeEntry("old_0", org: org, body: zstdBody, mtime: Date(timeIntervalSinceNow: -3600))
-        XCTAssertEqual(UsageReader.usage(inProfileDir: home, orgIDs: [org])?.orgID, org)
+        #expect(UsageReader.usage(inProfileDir: home, orgIDs: [org])?.orgID == org)
         // No org hint → newest wins.
-        XCTAssertEqual(UsageReader.usage(inProfileDir: home)?.orgID, otherOrg)
+        #expect(UsageReader.usage(inProfileDir: home)?.orgID == otherOrg)
         // Hint that matches nothing → fall back to newest.
-        XCTAssertEqual(UsageReader.usage(inProfileDir: home, orgIDs: ["nope"])?.orgID, otherOrg)
+        #expect(UsageReader.usage(inProfileDir: home, orgIDs: ["nope"])?.orgID == otherOrg)
     }
 
-    func testGarbageAndForeignEntriesAreIgnored() throws {
+    @Test func testGarbageAndForeignEntriesAreIgnored() throws {
         _ = try writeEntry("ok_0", org: org, body: zstdBody)
         // Truncated entry, wrong magic, corrupt zstd body.
         let dir = home.appendingPathComponent("Cache/Cache_Data")
@@ -88,27 +89,27 @@ final class UsageReaderTests: XCTestCase {
         try cacheEntry(org: org, body: Data([0x28, 0xB5, 0x2F, 0xFD, 0xFF, 0xFF]))
             .write(to: dir.appendingPathComponent("corrupt_0"))
         let usage = UsageReader.usage(inProfileDir: home)
-        XCTAssertEqual(usage?.fiveHour?.percent, 42.0)
+        #expect(usage?.fiveHour?.percent == 42.0)
     }
 
-    func testExpiredWindowIsFlagged() {
+    @Test func testExpiredWindowIsFlagged() {
         let past = ProfileUsage.Window(percent: 90, resetsAt: Date(timeIntervalSinceNow: -60))
         let future = ProfileUsage.Window(percent: 90, resetsAt: Date(timeIntervalSinceNow: 60))
         let never = ProfileUsage.Window(percent: 90, resetsAt: nil)
-        XCTAssertTrue(past.expired)
-        XCTAssertFalse(future.expired)
-        XCTAssertFalse(never.expired)
+        #expect(past.expired)
+        #expect(!future.expired)
+        #expect(!never.expired)
     }
 
-    func testExpiredAtAnExplicitInstant() {
+    @Test func testExpiredAtAnExplicitInstant() {
         let reset = Date(timeIntervalSince1970: 1_000_000)
         let window = ProfileUsage.Window(percent: 100, resetsAt: reset)
-        XCTAssertFalse(window.expired(at: reset.addingTimeInterval(-1)))
-        XCTAssertTrue(window.expired(at: reset.addingTimeInterval(1)))
-        XCTAssertFalse(ProfileUsage.Window(percent: 100, resetsAt: nil).expired(at: .distantFuture))
+        #expect(!window.expired(at: reset.addingTimeInterval(-1)))
+        #expect(window.expired(at: reset.addingTimeInterval(1)))
+        #expect(!ProfileUsage.Window(percent: 100, resetsAt: nil).expired(at: .distantFuture))
     }
 
-    func testNoCacheDirMeansNil() {
-        XCTAssertNil(UsageReader.usage(inProfileDir: home.appendingPathComponent("missing")))
+    @Test func testNoCacheDirMeansNil() {
+        #expect(UsageReader.usage(inProfileDir: home.appendingPathComponent("missing")) == nil)
     }
 }

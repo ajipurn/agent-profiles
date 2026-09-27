@@ -1,42 +1,43 @@
-import XCTest
+import Foundation
+import Testing
 @testable import ClaudeProfilesCore
 
-final class CLIProfileManagerTests: XCTestCase {
+final class CLIProfileManagerTests {
     let fm = FileManager.default
     var home: URL!
     var cli: CLIProfileManager!
 
-    override func setUpWithError() throws {
+    init() throws {
         home = fm.temporaryDirectory.appendingPathComponent("claude-cli-tests-\(UUID().uuidString)")
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
         cli = CLIProfileManager(home: home)
     }
 
-    override func tearDownWithError() throws {
+    deinit {
         try? fm.removeItem(at: home)
     }
 
-    func testFreshStateIsDefault() {
-        XCTAssertFalse(cli.isSetUp)
-        XCTAssertEqual(cli.profiles(), [])
-        XCTAssertNil(cli.activeProfile())
+    @Test func testFreshStateIsDefault() {
+        #expect(!cli.isSetUp)
+        #expect(cli.profiles() == [])
+        #expect(cli.activeProfile() == nil)
     }
 
-    func testInstallShimIsIdempotentAndExecutable() throws {
+    @Test func testInstallShimIsIdempotentAndExecutable() throws {
         try cli.installShim()
         try cli.installShim()
-        XCTAssertTrue(cli.isSetUp)
-        XCTAssertTrue(fm.isExecutableFile(atPath: cli.shim.path))
+        #expect(cli.isSetUp)
+        #expect(fm.isExecutableFile(atPath: cli.shim.path))
         let script = try String(contentsOf: cli.shim, encoding: .utf8)
-        XCTAssertTrue(script.hasPrefix("#!/bin/sh"))
-        XCTAssertTrue(script.contains("CLAUDE_CONFIG_DIR"))
-        XCTAssertTrue(fm.isExecutableFile(atPath: cli.profileTool.path))
-        XCTAssertTrue(try String(contentsOf: cli.profileTool, encoding: .utf8).hasPrefix("#!/bin/sh"))
+        #expect(script.hasPrefix("#!/bin/sh"))
+        #expect(script.contains("CLAUDE_CONFIG_DIR"))
+        #expect(fm.isExecutableFile(atPath: cli.profileTool.path))
+        #expect(try String(contentsOf: cli.profileTool, encoding: .utf8).hasPrefix("#!/bin/sh"))
     }
 
     /// The claude-profile script must agree with CLIProfileManager about the
     /// active-file format: names it writes are names the manager reads back.
-    func testProfileToolScriptRoundTripsWithManager() throws {
+    @Test func testProfileToolScriptRoundTripsWithManager() throws {
         try cli.installShim()
         try cli.createProfile(name: "work")
 
@@ -50,71 +51,71 @@ final class CLIProfileManagerTests: XCTestCase {
             return p.terminationStatus
         }
 
-        XCTAssertEqual(try run(["work"]), 0)
-        XCTAssertEqual(cli.activeProfile(), "work")
-        XCTAssertEqual(try run(["default"]), 0)
-        XCTAssertNil(cli.activeProfile())
-        XCTAssertNotEqual(try run(["ghost"]), 0)
-        XCTAssertNil(cli.activeProfile()) // failed switch changes nothing
+        #expect(try run(["work"]) == 0)
+        #expect(cli.activeProfile() == "work")
+        #expect(try run(["default"]) == 0)
+        #expect(cli.activeProfile() == nil)
+        #expect(try run(["ghost"]) != 0)
+        #expect(cli.activeProfile() == nil) // failed switch changes nothing
     }
 
-    func testCreateListSwitchDelete() throws {
+    @Test func testCreateListSwitchDelete() throws {
         try cli.createProfile(name: "work")
         try cli.createProfile(name: "personal")
-        XCTAssertEqual(cli.profiles(), ["personal", "work"])
+        #expect(cli.profiles() == ["personal", "work"])
 
         try cli.setActive("work")
-        XCTAssertEqual(cli.activeProfile(), "work")
+        #expect(cli.activeProfile() == "work")
         try cli.setActive(nil)
-        XCTAssertNil(cli.activeProfile())
+        #expect(cli.activeProfile() == nil)
 
         // Deleting the active profile falls back to the default account.
         try cli.setActive("personal")
         try cli.deleteProfile(name: "personal")
-        XCTAssertNil(cli.activeProfile())
-        XCTAssertEqual(cli.profiles(), ["work"])
+        #expect(cli.activeProfile() == nil)
+        #expect(cli.profiles() == ["work"])
     }
 
-    func testRenameMovesDirAndFollowsActive() throws {
+    @Test func testRenameMovesDirAndFollowsActive() throws {
         try cli.createProfile(name: "old")
         try cli.setActive("old")
-        XCTAssertEqual(try cli.renameProfile("old", to: "new"), "new")
-        XCTAssertEqual(cli.profiles(), ["new"])
-        XCTAssertEqual(cli.activeProfile(), "new")
-        XCTAssertThrowsError(try cli.renameProfile("ghost", to: "x"))
+        #expect(try cli.renameProfile("old", to: "new") == "new")
+        #expect(cli.profiles() == ["new"])
+        #expect(cli.activeProfile() == "new")
+        #expect(throws: (any Error).self) { try cli.renameProfile("ghost", to: "x") }
         try cli.createProfile(name: "other")
-        XCTAssertThrowsError(try cli.renameProfile("new", to: "other"))
+        #expect(throws: (any Error).self) { try cli.renameProfile("new", to: "other") }
     }
 
-    func testRejectsBadNamesAndDuplicates() throws {
+    @Test func testRejectsBadNamesAndDuplicates() throws {
         try cli.createProfile(name: "work")
-        XCTAssertThrowsError(try cli.createProfile(name: "work"))
-        XCTAssertThrowsError(try cli.createProfile(name: "!!!"))
-        XCTAssertThrowsError(try cli.setActive("missing"))
-        XCTAssertThrowsError(try cli.deleteProfile(name: "missing"))
+        #expect(throws: (any Error).self) { try cli.createProfile(name: "work") }
+        #expect(throws: (any Error).self) { try cli.createProfile(name: "!!!") }
+        #expect(throws: (any Error).self) { try cli.setActive("missing") }
+        #expect(throws: (any Error).self) { try cli.deleteProfile(name: "missing") }
     }
 
-    func testHideDefaultIsUIOnlyAndReversible() throws {
-        XCTAssertFalse(cli.defaultHidden)
+    @Test func testHideDefaultIsUIOnlyAndReversible() throws {
+        #expect(!cli.defaultHidden)
         try cli.setDefaultHidden(true)
-        XCTAssertTrue(cli.defaultHidden)
-        XCTAssertNil(cli.activeProfile()) // selection untouched
+        #expect(cli.defaultHidden)
+        #expect(cli.activeProfile() == nil) // selection untouched
         try cli.setDefaultHidden(false)
-        XCTAssertFalse(cli.defaultHidden)
+        #expect(!cli.defaultHidden)
     }
 
-    func testUnknownNameInActiveFileMeansDefault() throws {
+    @Test func testUnknownNameInActiveFileMeansDefault() throws {
         try cli.installShim()
         try "stale-profile\n".write(to: cli.cliDir.appendingPathComponent("active"),
                                     atomically: true, encoding: .utf8)
-        XCTAssertNil(cli.activeProfile())
+        #expect(cli.activeProfile() == nil)
     }
 
-    func testCLIDirHiddenFromDesktopProfiles() throws {
+    @Test func testCLIDirHiddenFromDesktopProfiles() throws {
         try cli.createProfile(name: "work")
         let desktop = ProfileManager(home: home)
         try fm.createDirectory(at: desktop.profilesDir.appendingPathComponent("main"),
                                withIntermediateDirectories: true)
-        XCTAssertEqual(desktop.profiles(), ["main"])
+        #expect(desktop.profiles() == ["main"])
     }
 }

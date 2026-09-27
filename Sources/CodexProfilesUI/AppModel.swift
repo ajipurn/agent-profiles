@@ -6,25 +6,25 @@ import CodexProfilesCore
 
 @MainActor
 @Observable
-final class AppModel {
-    var updater: UpdateController?
+public final class AppModel {
+    public var updater: UpdateController?
     var searchText = ""
     var favoritesOnly = false
     var isRefreshingUsage = false
     var lastUsageCheck: Date?
-    var live: LiveState?
-    var profiles: [Profile] = []
-    var settings: AppSettings = AppSettings()
+    public var live: LiveState?
+    public var profiles: [Profile] = []
+    public var settings: AppSettings = AppSettings()
     var status: String?
     var error: String?
-    var isBusy = false
+    public var isBusy = false
     var draftName = ""
     var editor: EditorMode?
     var awaitingLogin = false
-    var pendingNewLogin = false
+    public var pendingNewLogin = false
 
     private var demoWindow: NSWindow?
-    let isDemo: Bool
+    public let isDemo: Bool
     private var switcher: AccountSwitcher
     private var usageClient = CodexUsageClient()
     private var loginPollTask: Task<Void, Never>?
@@ -38,8 +38,8 @@ final class AppModel {
     private var usagePollInFlight = false
     private var isUsagePanelOpen = false
 
-    var liveUsage = UsageLoadState()
-    var profileUsage: [UUID: UsageLoadState] = [:]
+    public var liveUsage = UsageLoadState()
+    public var profileUsage: [UUID: UsageLoadState] = [:]
 
     enum EditorMode: Equatable {
         case save
@@ -47,7 +47,7 @@ final class AppModel {
         case add
     }
 
-    init(switcher: AccountSwitcher? = nil, demo: Bool = false) {
+    public init(switcher: AccountSwitcher? = nil, demo: Bool = false) {
         isDemo = demo
         if demo {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("CodexProfiles-Demo-" + UUID().uuidString)
@@ -83,7 +83,7 @@ final class AppModel {
                              settings: settings, activeID: live?.matchingProfileID, usage: profileUsage)
     }
 
-    func displayName(for profile: Profile) -> String {
+    public func displayName(for profile: Profile) -> String {
         if settings.hideEmails && Profile.looksLikeEmail(profile.displayName) {
             return "Account \((profiles.firstIndex(where: { $0.id == profile.id }) ?? 0) + 1)"
         }
@@ -106,7 +106,7 @@ final class AppModel {
         updateSettings()
     }
 
-    var currentTitle: String {
+    public var currentTitle: String {
         if let active = profiles.first(where: { $0.id == live?.matchingProfileID }) {
             return displayName(for: active)
         }
@@ -126,7 +126,7 @@ final class AppModel {
         editor == .add && pendingNewLogin
     }
 
-    func refresh() {
+    public func refresh() {
         let previousFile = live?.file
         do {
             let refreshedLive = try switcher.liveState()
@@ -155,7 +155,7 @@ final class AppModel {
         error = nil
     }
 
-    func refreshUsage(force: Bool = false, includeSaved: Bool = true, silent: Bool = false) {
+    public func refreshUsage(force: Bool = false, includeSaved: Bool = true, silent: Bool = false) {
         guard !isDemo, !isBusy, !pendingNewLogin else { return }
         if !force, let lastUsageLoad, Date().timeIntervalSince(lastUsageLoad) < 5,
            liveUsage.usage != nil
@@ -300,7 +300,7 @@ final class AppModel {
         }
     }
 
-    func switchTo(_ profile: Profile) {
+    public func switchTo(_ profile: Profile) {
         guard !pendingNewLogin, profile.id != live?.matchingProfileID else { return }
         let name = displayName(for: profile)
         run("Switching to \(name)…") {
@@ -336,13 +336,19 @@ final class AppModel {
     }
 
     func quit() {
+        prepareForTermination()
+        NSApp.terminate(nil)
+    }
+
+    /// Stops background work and removes the preview store. The app shell
+    /// calls this on termination, whichever panel the quit came from.
+    public func prepareForTermination() {
         loginPollTask?.cancel()
         usageTask?.cancel()
         usagePollTask?.cancel()
         statusClearTask?.cancel()
         autoRefreshTask?.cancel()
         if isDemo { try? FileManager.default.removeItem(at: switcher.paths.storeRoot.deletingLastPathComponent()) }
-        NSApp.terminate(nil)
     }
 
     private func loadUsage(includeSaved: Bool = true, showLoading: Bool = true) async {
@@ -698,11 +704,11 @@ final class AppModel {
         trap cleanup EXIT
         trap cancelled HUP INT TERM
 
-        printf '\\033]0;Codex Profiles Login\\007'
+        printf '\\033]0;Agent Profiles Login\\007'
         printf '%s\\n' "$THIS_TTY" > "$TTYFILE"
         printf 'running\\n' > "$STATE"
         rm -f "$MARKER"
-        echo "Codex Profiles — sign in to the ChatGPT account you want to add."
+        echo "Agent Profiles — sign in to the ChatGPT account you want to add."
         echo
 
         "$CLI" login &
