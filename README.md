@@ -18,7 +18,23 @@ Independently developed. Not affiliated with or endorsed by Anthropic or OpenAI.
 3. Quit Claude Profiles and Codex Profiles if you use them; Agent Profiles picks up their profiles and accounts as they are.
 4. Open Agent Profiles and click its icon in the menu bar.
 
-Releases are ad-hoc signed and **not Apple-notarized**, so macOS blocks the first launch. After checking where the download came from, use **Open Anyway** in **System Settings → Privacy & Security**. Later updates are verified by Sparkle's own signatures.
+### "Agent Profiles" Not Opened
+
+Releases are ad-hoc signed and **not Apple-notarized** (that needs a paid Apple Developer account), so the first launch shows *"Apple could not verify “Agent Profiles” is free of malware…"*. Nothing was detected; macOS shows this for every app that is not notarized. After checking where the download came from, pick one of these once:
+
+**System Settings (macOS 15 and later)**
+
+1. In the warning, click **Done**, not "Move to Trash".
+2. Open **System Settings → Privacy & Security** and scroll down to *"Agent Profiles" was blocked…*.
+3. Click **Open Anyway** and confirm with your password or Touch ID.
+
+**Terminal**: remove the quarantine mark directly, then open the app as usual:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Agent Profiles.app"
+```
+
+macOS does not ask again for this copy. Later versions arrive through the app's own updater, which verifies Sparkle's Ed25519 signature before installing. Building from source (see below) avoids the warning entirely.
 
 ## Try it
 
