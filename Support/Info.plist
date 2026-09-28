@@ -63,7 +63,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/ajipurn/agent-profiles/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>baIxhcXesCd1SBmgQPrvP90pt3lk9mc2dw3B6a3F5/E=</string>
 	<key>CPRepositoryURL</key>
 	<string>https://github.com/ajipurn/agent-profiles</string>
 </dict>
