@@ -20,10 +20,9 @@ public final class AppModel {
     public var isBusy = false
     var draftName = ""
     var editor: EditorMode?
-    var awaitingLogin = false
+    public var awaitingLogin = false
     public var pendingNewLogin = false
 
-    private var demoWindow: NSWindow?
     public let isDemo: Bool
     private var switcher: AccountSwitcher
     private var usageClient = CodexUsageClient()
@@ -90,13 +89,6 @@ public final class AppModel {
         return profile.displayName
     }
 
-    var menuBarUsage: String? {
-        guard settings.showMenuBarUsage, let usage = liveUsage.usage else { return nil }
-        guard liveUsage.error == nil else { return "—" }
-        guard let fiveHourWindow = usage.windows.first(where: { $0.label == "5h" }) else { return "—" }
-        return "\(fiveHourWindow.remainingDisplay)%"
-    }
-
     func toggleFavorite(_ profile: Profile) {
         if settings.favoriteProfileIDs.contains(profile.id) {
             settings.favoriteProfileIDs.remove(profile.id)
@@ -118,11 +110,11 @@ public final class AppModel {
         live?.identity?.subtitle ?? "Add an account to get started"
     }
 
-    var needsSave: Bool {
+    public var needsSave: Bool {
         live?.file != nil && live?.matchingProfileID == nil
     }
 
-    var isCompletingLogin: Bool {
+    public var isCompletingLogin: Bool {
         editor == .add && pendingNewLogin
     }
 
@@ -181,7 +173,7 @@ public final class AppModel {
         }
     }
 
-    func startLiveUsagePolling() {
+    public func startLiveUsagePolling() {
         guard !isDemo else { return }
         isUsagePanelOpen = true
         usagePollTask?.cancel()
@@ -197,13 +189,13 @@ public final class AppModel {
         }
     }
 
-    func stopLiveUsagePolling() {
+    public func stopLiveUsagePolling() {
         isUsagePanelOpen = false
         usagePollTask?.cancel()
         usagePollTask = nil
     }
 
-    func beginSave() {
+    public func beginSave() {
         clearFeedback()
         draftName = (try? switcher.suggestedName()) ?? ""
         editor = .save
@@ -215,7 +207,7 @@ public final class AppModel {
         editor = .rename(profile.id)
     }
 
-    func beginAdd() {
+    public func beginAdd() {
         guard !isBusy, !pendingNewLogin else { return }
         if isDemo {
             showSuccess("Preview mode uses sample accounts. Open the app normally to sign in.")
@@ -242,7 +234,7 @@ public final class AppModel {
         error = nil
     }
 
-    func cancelLogin() {
+    public func cancelLogin() {
         guard awaitingLogin else { return }
         awaitingLogin = false
         isBusy = true
@@ -333,11 +325,6 @@ public final class AppModel {
             status = nil
             self.error = "Unable to save settings. \(error.localizedDescription)"
         }
-    }
-
-    func quit() {
-        prepareForTermination()
-        NSApp.terminate(nil)
     }
 
     /// Stops background work and removes the preview store. The app shell
@@ -621,19 +608,6 @@ public final class AppModel {
             guard let self, self.status == message, !self.isBusy else { return }
             self.status = nil
         }
-    }
-
-    func showDemoWindow() {
-        guard isDemo, demoWindow == nil else { return }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 690),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Codex Profiles · Preview"
-        window.contentViewController = NSHostingController(rootView: MenuPanel().environment(self))
-        window.isReleasedWhenClosed = false
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        demoWindow = window
     }
 
     /// A fully isolated preview: temporary profiles, inert clients, and no network requests.

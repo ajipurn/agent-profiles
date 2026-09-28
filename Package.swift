@@ -35,15 +35,18 @@ let package = Package(
         ),
         // Imported from codex-profiles (Swift 6, strict concurrency).
         .target(name: "CodexProfilesCore"),
+        // Menu card, account rows, switcher and menu bar icon shared by both
+        // providers (CodexBar-style).
+        .target(name: "AgentUI"),
         .target(
             name: "CodexProfilesUI",
-            dependencies: ["CodexProfilesCore", .product(name: "Sparkle", package: "Sparkle")]
+            dependencies: ["AgentUI", "CodexProfilesCore", .product(name: "Sparkle", package: "Sparkle")]
         ),
-        // The app shell: status item, popover, windows. Hosts the Claude
-        // screens directly and the Codex screens from CodexProfilesUI.
+        // The app shell: status item, menu, Settings window. Hosts the Claude
+        // screens directly and the Codex ones from CodexProfilesUI.
         .executableTarget(
             name: "AgentProfiles",
-            dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI"],
+            dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("AppKit"),

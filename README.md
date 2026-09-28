@@ -5,9 +5,8 @@ eye on their usage limits. It merges
 [Claude Profiles](https://github.com/ajipurn/claude-profiles) and
 [Codex Profiles](https://github.com/ajipurn/codex-profiles) into one app.
 
-**Status: phase 1, unreleased.** Everything both apps do works side by side in
-one app. The shared design, the release pipeline and the move for existing
-users come next.
+**Status: unreleased.** Everything both apps do works in one app with one
+shared design. The release pipeline and the move for existing users come next.
 
 Independently developed. Not affiliated with or endorsed by Anthropic or OpenAI.
 
@@ -21,28 +20,30 @@ make run    # real mode: manages your actual accounts
 
 Preview mode (`--demo`) keeps its sample accounts in temporary folders and never
 quits or relaunches Claude or ChatGPT, so it is safe to run next to the old
-apps. It also opens the panel as a window.
+apps. It also opens Settings right away.
 
 Real mode works on the same files as the old apps. If Claude Profiles or Codex
 Profiles is running, it asks to quit them first and does not start otherwise.
 
-## What's in phase 1
+## What it looks like
 
-- **Left-click:** popover with a **Claude | Codex** switch. Each side is that
-  app's own panel, unchanged apart from names.
-- **Right-click:** quick-switch menu with both providers' accounts.
-- **Menu bar:** the Claude gauge while Claude profiles are set up; otherwise
-  the Codex one, if its "Show 5-hour remaining quota in menu bar" setting is
-  on. The tooltip covers both.
-- **From Claude Profiles:** Desktop and CLI profiles, shared session history,
-  low-limit alerts, ⌘⌥1…9 hotkeys, `claudeprofiles://` URLs, the window view,
-  launch at login.
-- **From Codex Profiles:** switching through `~/.codex/auth.json`, sign-in in
-  Terminal, usage refresh, search, favorites, sorting.
-- **One Sparkle updater** for both, inactive until the release pipeline adds a
-  feed and signing key.
+The menu follows [CodexBar](https://github.com/steipete/CodexBar)'s design:
 
-The app and menu bar icons are Codex Profiles' for now.
+- **Menu bar:** a two-bar icon, with the session window on top and the weekly
+  window below, plus the session percentage. It shows the provider picked in
+  Settings → General (Claude or Codex).
+- **Menu (either click):** Claude | Codex tabs, the selected provider's card
+  (account, freshness, Session and Weekly bars with reset countdowns), the
+  other accounts to switch to, and actions. Claude also gets a Claude Code
+  profile submenu once CLI profiles are set up.
+- **Settings window:** General (menu bar, launch at login, updates), Claude
+  (profiles, Desktop and CLI switching, rename, delete, order, shared session
+  history, CLI setup), Codex (accounts, favorites, rename, remove, sign-in,
+  options), About.
+
+Everything both old apps did is still there. The hotkeys (⌘⌥1…9),
+`claudeprofiles://` URLs and low-limit alerts are unchanged. The app and menu
+bar icons are Codex Profiles' for now.
 
 ## Compatibility with the old apps
 
@@ -62,8 +63,9 @@ These must not change, or existing installs break:
 Sources/CZstd/                  vendored zstd, decompress only (BSD)   ← claude-profiles
 Sources/ClaudeProfilesCore/     Claude profile logic, no UI            ← claude-profiles
 Sources/CodexProfilesCore/      Codex profile logic, no UI             ← codex-profiles
-Sources/CodexProfilesUI/        Codex panel, model and updater         ← codex-profiles
-Sources/AgentProfiles/          app shell and the Claude screens       ← claude-profiles
+Sources/AgentUI/                menu card, bars, switcher, menu bar icon (shared)
+Sources/CodexProfilesUI/        Codex model, settings pane, updater    ← codex-profiles
+Sources/AgentProfiles/          app shell, menu, Settings, Claude pane ← claude-profiles
 Tests/ClaudeProfilesCoreTests/  Swift Testing (ported from XCTest)
 Tests/CodexProfilesCheck/       plain executable checks
 ```
@@ -84,9 +86,8 @@ override.
 
 ## Next
 
-- **Phase 2:** one design for both panels, a menu bar readout that covers both
-  providers, Codex in the hotkeys, URL scheme and notifications, and the Claude
-  code moved to Swift 6.
+- **Phase 2 (rest):** Codex in the hotkeys, URL scheme and notifications, and
+  the Claude code moved to Swift 6.
 - **Phase 3:** release pipeline (universal build, Sparkle key and feed), plus a
   last release of each old app that points its users here.
 

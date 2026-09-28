@@ -87,28 +87,3 @@ public final class UpdateController: NSObject, ObservableObject, SPUUpdaterDeleg
         return true
     }
 }
-
-struct UpdateSettingsMenu: View {
-    @ObservedObject var updater: UpdateController
-
-    var body: some View {
-        Button("Check for Updates…") { updater.checkForUpdates() }
-            .disabled(!updater.canCheckForUpdates)
-        Toggle("Automatically check for app updates", isOn: Binding(
-            get: { updater.automaticallyChecks }, set: { updater.setAutomaticChecks($0) }
-        ))
-        .disabled(!updater.isAvailable)
-        Toggle("Automatically download and install updates", isOn: Binding(
-            get: { updater.automaticallyInstalls }, set: { updater.setAutomaticInstallation($0) }
-        ))
-        .disabled(!updater.isAvailable || !updater.automaticallyChecks)
-        if let reason = updater.unavailableReason {
-            Text(reason)
-        }
-        if let repository = Bundle.main.object(forInfoDictionaryKey: "CPRepositoryURL") as? String,
-           let url = URL(string: repository + "/releases"), url.scheme == "https" {
-            Button("View GitHub releases…") { NSWorkspace.shared.open(url) }
-        }
-        Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")")
-    }
-}
