@@ -11,6 +11,7 @@ cd "$ROOT"
 source scripts/swift-env.sh
 CONFIGURATION="${1:-debug}"
 [[ "$CONFIGURATION" == debug || "$CONFIGURATION" == release ]] || { echo "Use debug or release" >&2; exit 1; }
+python3 scripts/release_metadata.py check
 
 # CI can supply both architectures; local builds default to the host architecture.
 ARCH_ARGS=()

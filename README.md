@@ -7,10 +7,18 @@ eye on their usage limits. It merges
 [Claude Profiles](https://github.com/ajipurn/claude-profiles) and
 [Codex Profiles](https://github.com/ajipurn/codex-profiles) into one app.
 
-**Status: unreleased.** Everything both apps do works in one app with one
-shared design. The release pipeline and the move for existing users come next.
+Requires macOS 14 or later, on Apple Silicon or Intel.
 
 Independently developed. Not affiliated with or endorsed by Anthropic or OpenAI.
+
+## Install
+
+1. Download `AgentProfiles-<version>.zip` from [Releases](https://github.com/ajipurn/agent-profiles/releases/latest).
+2. Unzip it and move **Agent Profiles.app** to **Applications**.
+3. Quit Claude Profiles and Codex Profiles if you use them; Agent Profiles picks up their profiles and accounts as they are.
+4. Open Agent Profiles and click its icon in the menu bar.
+
+Releases are ad-hoc signed and **not Apple-notarized**, so macOS blocks the first launch. After checking where the download came from, use **Open Anyway** in **System Settings → Privacy & Security**. Later updates are verified by Sparkle's own signatures.
 
 ## Try it
 
@@ -120,8 +128,10 @@ override.
 
 ## Next
 
-- **Phase 3:** release pipeline (universal build, Sparkle key and feed), plus a
-  last release of each old app that points its users here.
+- A last release of Claude Profiles and Codex Profiles that points their users
+  here.
+
+See [Privacy](PRIVACY.md), [Security](SECURITY.md), [Contributing](CONTRIBUTING.md) and the [release guide](docs/RELEASING.md).
 
 ## License
 

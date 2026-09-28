@@ -1,15 +1,18 @@
 # Sourced by the build and test scripts (zsh). Works around problems seen
 # with the macOS 27 Command Line Tools when no Xcode is installed:
 #  - SwiftPM's default `swiftbuild` engine fails to start ("Unknown error
-#    parsing property list"); the native build system still works.
+#    parsing property list"); the native build system still works. Only
+#    used there: universal (multi-arch) builds need the default engine.
 #  - The macOS 27 SDK turns SwiftUI's @State into a macro whose plugin ships
 #    only with Xcode, so SwiftUI code has to build against a macOS 26 SDK.
 #  - The native build system does not find the Command Line Tools' copy of
 #    Swift Testing, so `swift test` gets its paths spelled out (TEST_FLAGS).
 # An explicit SDKROOT or SWIFT_BUILD_SYSTEM always wins.
-SWIFT_FLAGS=(--build-system "${SWIFT_BUILD_SYSTEM:-native}")
+SWIFT_FLAGS=()
+[[ -z "${SWIFT_BUILD_SYSTEM:-}" ]] || SWIFT_FLAGS=(--build-system "$SWIFT_BUILD_SYSTEM")
 TEST_FLAGS=()
 if [[ "$(xcode-select -p 2>/dev/null)" == */CommandLineTools ]]; then
+  [[ -n "${SWIFT_BUILD_SYSTEM:-}" ]] || SWIFT_FLAGS=(--build-system native)
   testing="$(xcode-select -p)/Library/Developer/Frameworks"
   TEST_FLAGS=(
     -Xswiftc -F -Xswiftc "$testing"

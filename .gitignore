@@ -21,3 +21,4 @@ xcuserdata/
 # Never publish saved account credentials
 auth.json
 profiles/
+__pycache__/
