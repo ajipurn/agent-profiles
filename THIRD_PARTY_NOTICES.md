@@ -1,6 +1,6 @@
 # Third-party notices
 
-Agent Profiles bundles Sparkle 2.9.6 (https://sparkle-project.org),
+Agent Profiles bundles Sparkle 2.10.0 (https://sparkle-project.org),
 including its update helpers and the following licenses.
 
 ```text
