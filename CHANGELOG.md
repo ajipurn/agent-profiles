@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Update Sparkle, the app updater, to 2.10.0
+
 ## 1.0.0
 
 - One menu for Claude and Codex: usage card with session and weekly bars, reset countdowns, and the other accounts to switch to
