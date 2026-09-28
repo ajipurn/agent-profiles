@@ -103,8 +103,38 @@ final class AppState: ObservableObject {
         default:
             mode = .ready
         }
+        if adoptExistingLogin() { return } // refreshed again inside
         refreshUsage()
         watchActiveProfileCache()
+    }
+
+    private var triedAutoSetup = false
+
+    /// Claude's own folder still holds a login (profiles never set up): make
+    /// it the first profile on its own, but only while Claude is quit, so
+    /// nothing has to restart. With Claude running, Set Up Profiles… stays
+    /// the way in. Tried once per launch.
+    private func adoptExistingLogin() -> Bool {
+        guard mode == .needsSetup, !triedAutoSetup, !isSwitching, !claude.isInert,
+              claude.appURL != nil, !claude.isRunning,
+              manager.claudeDirState() == .realDirectory
+        else { return false }
+        triedAutoSetup = true
+        var name = "main"
+        var suffix = 2
+        while manager.profiles().contains(name) {
+            name = "main-\(suffix)"
+            suffix += 1
+        }
+        do {
+            try manager.migrate(name: name)
+        } catch {
+            Notifier.post("Setup failed", error.localizedDescription)
+            return false
+        }
+        Notifier.post("Claude profiles set up", "Your current Claude login is saved as “\(name)”.")
+        refresh()
+        return true
     }
 
     // MARK: - Cache watcher
@@ -263,26 +293,21 @@ final class AppState: ObservableObject {
 
     // MARK: - First-login watcher
 
-    private var loginWatcher: Timer?
+    private var loginWatcher: Task<Void, Never>?
 
     /// Polls the active profile until Claude writes its login ids, then links
     /// its org dir into the shared tree and offers the one restart Claude
     /// needs to load the combined sidebar. Ends on switch-away or after ~15 min.
     private func watchForFirstLogin(of name: String) {
-        loginWatcher?.invalidate()
-        var ticks = 0
-        loginWatcher = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] timer in
-            Task { @MainActor [weak self] in
-                guard let self else { timer.invalidate(); return }
-                ticks += 1
-                guard ticks <= 300, self.manager.activeProfile() == name else {
-                    timer.invalidate()
-                    return
-                }
-                guard self.manager.hasAccountIDs(profile: name) else { return }
-                timer.invalidate()
+        loginWatcher?.cancel()
+        loginWatcher = Task { [weak self] in
+            for _ in 0..<300 {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                guard let self, self.manager.activeProfile() == name else { return }
+                guard self.manager.hasAccountIDs(profile: name) else { continue }
                 let linked = (try? self.manager.prelinkKnownAccounts()) ?? 0
                 if linked > 0 { self.offerHistoryRestart(name) }
+                return
             }
         }
     }

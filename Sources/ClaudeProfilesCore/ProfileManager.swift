@@ -37,11 +37,11 @@ public enum ClaudeDirState: Equatable {
 }
 
 /// All filesystem logic. No UI, no AppKit — fully testable against a fake home directory.
-public final class ProfileManager {
+public final class ProfileManager: Sendable {
     public static let sessionTrees = ["claude-code-sessions", "local-agent-mode-sessions"]
 
     public let home: URL
-    private let fm = FileManager.default
+    private var fm: FileManager { .default }
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.home = home.standardizedFileURL

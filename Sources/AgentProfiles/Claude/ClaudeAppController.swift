@@ -54,21 +54,22 @@ final class ClaudeAppController {
 
 enum Notifier {
     /// `userInfo` rides along to the app's notification delegate — the
-    /// low-limit alert uses it to carry the suggested switch target.
-    static func post(_ title: String, _ body: String = "", userInfo: [AnyHashable: Any] = [:]) {
+    /// low-limit alerts use it to carry the suggested switch target.
+    static func post(_ title: String, _ body: String = "", userInfo: [String: String] = [:]) {
         // UNUserNotificationCenter requires a real .app bundle; `swift run` has none.
         guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundleURL.pathExtension == "app" else {
             NSLog("[Agent Profiles] %@ — %@", title, body)
             return
         }
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return } // denied → degrade silently
+        Task {
+            let center = UNUserNotificationCenter.current()
+            // Denied → degrade silently.
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
             content.userInfo = userInfo
-            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }
     }
 }

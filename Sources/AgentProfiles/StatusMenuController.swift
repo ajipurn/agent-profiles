@@ -14,17 +14,20 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let codex: AppModel
     private let defaultTab: () -> MenuBarProvider
     private let openSettings: (SettingsPane) -> Void
+    private let switchCodex: (String) -> Void
     private let tab = TabSelection()
 
     private static let width: CGFloat = 300
 
     init(claude: AppState, codex: AppModel,
          defaultTab: @escaping () -> MenuBarProvider,
-         openSettings: @escaping (SettingsPane) -> Void) {
+         openSettings: @escaping (SettingsPane) -> Void,
+         switchCodex: @escaping (String) -> Void) {
         self.claude = claude
         self.codex = codex
         self.defaultTab = defaultTab
         self.openSettings = openSettings
+        self.switchCodex = switchCodex
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -105,10 +108,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private func accountItem(_ account: UsageAccount, provider: MenuBarProvider, enabled: Bool) -> NSMenuItem {
-        let perform: () -> Void = { [claude, codex] in
+        let perform: () -> Void = { [claude, switchCodex] in
             switch provider {
             case .claude: claude.switchTo(account.id)
-            case .codex: codex.switchTo(accountID: account.id)
+            case .codex: switchCodex(account.id)
             }
         }
         let item = ActionMenuItem(account.title, handler: perform)
@@ -124,8 +127,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Which profile `claude` in the terminal uses; switching is instant.
     private func cliItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Claude Code Profile", action: nil, keyEquivalent: "")
-        item.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)
+        let item = ActionMenuItem("Claude Code Profile", symbol: "terminal") {}
+        item.action = nil
         let submenu = NSMenu()
         var names: [String?] = claude.cliDefaultHidden ? [] : [nil]
         names += claude.allProfiles.map(Optional.some)
@@ -235,8 +238,11 @@ final class ActionMenuItem: NSMenuItem {
         self.handler = handler
         super.init(title: title, action: #selector(fire), keyEquivalent: key)
         target = self
-        if let symbol {
-            image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        if let symbol, let icon = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+            // Without an explicit size the menu drops the symbol.
+            icon.isTemplate = true
+            icon.size = NSSize(width: 16, height: 16)
+            image = icon
         }
     }
 

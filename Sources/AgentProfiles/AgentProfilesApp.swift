@@ -41,6 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var cancellables: [Any] = []
     private var wasCompletingLogin = false
+    /// A Codex switch started here (menu, hotkey, URL, notification), reported
+    /// by notification once it finishes.
+    private var pendingCodexSwitch: String?
+    /// Codex session windows already alerted about (account + reset time).
+    private var codexLowNotified: Set<String> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -72,16 +77,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if Bundle.main.bundleIdentifier != nil, Bundle.main.bundleURL.pathExtension == "app" {
             UNUserNotificationCenter.current().delegate = self
         }
-        HotKeys.install { [weak self] index in
-            guard let self, self.state.canSwitchDesktop, index < self.state.allProfiles.count else { return }
-            let name = self.state.allProfiles[index]
-            if name != self.state.activeProfile { self.state.switchTo(name) }
+        HotKeys.install { [weak self] group, index in
+            guard let self else { return }
+            switch group {
+            case .claude:
+                guard self.state.canSwitchDesktop, index < self.state.allProfiles.count else { return }
+                let name = self.state.allProfiles[index]
+                if name != self.state.activeProfile { self.state.switchTo(name) }
+            case .codex:
+                let ids = self.codex.hotkeyAccountIDs
+                guard index < ids.count else { return }
+                self.switchCodex(ids[index])
+            }
         }
 
         menuController = StatusMenuController(
             claude: state, codex: codex,
             defaultTab: { Preferences.menuBarProvider ?? .claude },
-            openSettings: { [weak self] pane in self?.showSettings(pane) })
+            openSettings: { [weak self] pane in self?.showSettings(pane) },
+            switchCodex: { [weak self] id in self?.switchCodex(id) })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "dev.aji.AgentProfiles.status"
         statusItem.menu = menuController.menu
@@ -147,38 +161,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // A finished Terminal sign-in needs a name, asked for in Settings.
                 if self.codex.isCompletingLogin, !self.wasCompletingLogin { self.showSettings(.codex) }
                 self.wasCompletingLogin = self.codex.isCompletingLogin
+                self.reportCodexSwitch()
+                self.notifyIfCodexNearlyOut()
                 self.updateStatusItem()
                 self.observeCodex()
             }
         }
     }
 
-    /// Scripting hook (Raycast/Alfred/shell), kept from Claude Profiles:
-    /// `claudeprofiles://switch/<name>` switches Desktop,
-    /// `claudeprofiles://switch-cli/<name>` the CLI (`Default` = the plain
-    /// ~/.claude account), `claudeprofiles://open` shows the Claude settings.
+    // MARK: Codex switching and alerts
+
+    /// Every Codex switch the app starts goes through here, so its outcome
+    /// can be reported: the menu is closed by then and Settings may be too.
+    private func switchCodex(_ accountID: String) {
+        guard accountID != codex.activeAccountID, codex.canSwitch else { return }
+        pendingCodexSwitch = accountID
+        codex.switchTo(accountID: accountID)
+    }
+
+    private func reportCodexSwitch() {
+        guard let pending = pendingCodexSwitch, !codex.isBusy else { return }
+        pendingCodexSwitch = nil
+        let name = codex.accountName(pending) ?? "the account"
+        if codex.activeAccountID == pending {
+            Notifier.post("Codex: switched to \(name)",
+                          codex.restartsChatGPT ? "" : "Restart ChatGPT to use it there.")
+        } else if let error = codex.lastError {
+            Notifier.post("Codex switch failed", error)
+        }
+    }
+
+    /// Once per session window: the active Codex account has 10% or less
+    /// left. Suggests the saved account with the most left, if it is well
+    /// clear; clicking the notification switches to it.
+    private func notifyIfCodexNearlyOut() {
+        guard let active = codex.activeAccountID,
+              let session = codex.cardModel.limits.first(where: { $0.title == "Session" }),
+              let remaining = session.remaining, remaining <= 10,
+              let resetsAt = session.resetsAt, resetsAt > Date()
+        else { return }
+        // Codex reports "resets after N seconds", so the time drifts a little
+        // between fetches; ten-minute buckets keep it one window.
+        let key = "\(active)-\(Int(resetsAt.timeIntervalSince1970 / 600))"
+        guard codexLowNotified.insert(key).inserted else { return }
+        let name = codex.accountName(active) ?? "Codex"
+        let resets = RelativeDateTimeFormatter().localizedString(for: resetsAt, relativeTo: Date())
+        let best = codex.menuAccounts
+            .filter { ($0.remaining ?? 0) > 40 }
+            .max { ($0.remaining ?? 0) < ($1.remaining ?? 0) }
+        if let best {
+            Notifier.post("Codex: \(name) is nearly out — \(UsageFormat.percent(remaining)) of session left",
+                          "Resets \(resets). Click to switch to \(best.title) (\(UsageFormat.percent(best.remaining)) left).",
+                          userInfo: ["switchCodex": best.id])
+        } else {
+            Notifier.post("Codex: \(name) is nearly out — \(UsageFormat.percent(remaining)) of session left",
+                          "Resets \(resets).")
+        }
+    }
+
+    // MARK: URL scheme
+
+    /// Scripting hook (Raycast, Alfred, shell):
+    /// - `agentprofiles://claude/<name>` switches Claude Desktop,
+    /// - `agentprofiles://claude-cli/<name>` the Claude Code profile
+    ///   (`Default` = the plain ~/.claude account),
+    /// - `agentprofiles://codex/<name>` Codex (name, label or email),
+    /// - `agentprofiles://open[/<pane>]` opens Settings.
+    /// Claude Profiles' `claudeprofiles://switch|switch-cli|open` still work.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard state != nil else { return }
-        for url in urls where url.scheme == "claudeprofiles" {
+        for url in urls {
             let name = url.pathComponents.count > 1 ? url.pathComponents[1] : nil
-            switch url.host {
+            let route: String?
+            switch (url.scheme, url.host) {
+            case ("agentprofiles", let host): route = host
+            case ("claudeprofiles", "switch"): route = "claude"
+            case ("claudeprofiles", "switch-cli"): route = "claude-cli"
+            case ("claudeprofiles", "open"): route = "open"
+            default: route = nil
+            }
+            switch route {
             case "open":
-                showSettings(.claude)
-            case "switch":
+                showSettings(name.flatMap(SettingsPane.init) ?? (url.scheme == "claudeprofiles" ? .claude : .general))
+            case "claude":
                 guard let name, state.allProfiles.contains(name) else {
-                    Notifier.post("Unknown profile", "No profile named “\(name ?? "?")”.")
+                    Notifier.post("Unknown profile", "No Claude profile named “\(name ?? "?")”.")
                     continue
                 }
                 if name != state.activeProfile { state.switchTo(name) }
-            case "switch-cli":
+            case "claude-cli":
                 guard let name else { continue }
                 if name == "Default" {
                     state.switchCLI(nil)
                 } else if state.allProfiles.contains(name) {
                     state.switchCLI(name)
                 } else {
-                    Notifier.post("Unknown profile", "No profile named “\(name)”.")
+                    Notifier.post("Unknown profile", "No Claude profile named “\(name)”.")
                 }
+            case "codex":
+                guard let name, let id = codex.accountID(matching: name) else {
+                    Notifier.post("Unknown account", "No Codex account named “\(name ?? "?")”.")
+                    continue
+                }
+                switchCodex(id)
             default:
                 break
             }
@@ -269,16 +354,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 // MARK: Notification clicks
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    /// The low-limit alert carries its suggested profile in userInfo;
+    /// The low-limit alerts carry their suggested account in userInfo;
     /// clicking the notification switches straight to it.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
         let target = userInfo["switchTo"] as? String
+        let codexTarget = userInfo["switchCodex"] as? String
         let link = (userInfo["openURL"] as? String).flatMap(URL.init(string:))
         Task { @MainActor [weak self] in
             if let target, let self { self.state.switchTo(target) }
+            if let codexTarget, let self { self.switchCodex(codexTarget) }
             if let link { NSWorkspace.shared.open(link) }
         }
         completionHandler()

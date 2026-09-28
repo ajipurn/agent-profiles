@@ -65,6 +65,35 @@ extension AppModel {
     /// True while Settings has something to ask (a name for a new or unsaved account).
     public var isEditing: Bool { editor != nil }
 
+    /// Saved accounts in hotkey order (⌃⌥1…9): favorites first, then by
+    /// name. Unlike the menu, this ignores the active account and usage, so
+    /// a number keeps pointing at the same account.
+    public var hotkeyAccountIDs: [String] {
+        var byName = settings
+        byName.sortOrder = .name
+        return ProfileList.arranged(profiles, query: "", favoritesOnly: false, settings: byName,
+                                    activeID: nil, usage: [:])
+            .map(\.id.uuidString)
+    }
+
+    /// A saved account whose name, label or email is `name` (any case).
+    public func accountID(matching name: String) -> String? {
+        profiles.first { profile in
+            [profile.name, profile.displayName, profile.identity?.email ?? ""]
+                .contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+        }?.id.uuidString
+    }
+
+    public func accountName(_ accountID: String) -> String? {
+        profiles.first { $0.id.uuidString == accountID }.map(displayName(for:))
+    }
+
+    public var activeAccountID: String? { live?.matchingProfileID?.uuidString }
+
+    public var restartsChatGPT: Bool { settings.restartChatGPT }
+
+    public var lastError: String? { error }
+
     public func switchTo(accountID: String) {
         guard let profile = profiles.first(where: { $0.id.uuidString == accountID }) else { return }
         switchTo(profile)

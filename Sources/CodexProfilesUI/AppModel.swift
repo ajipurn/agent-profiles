@@ -138,9 +138,44 @@ public final class AppModel {
                     liveUsage = .idle
                 }
             }
+            adoptLiveLoginIfNeeded()
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// Saves a signed-in Codex login that no saved account matches yet, so an
+    /// existing session shows up without a "Save" step. Waits out sign-in and
+    /// naming flows, and leaves alone logins the user removed while active.
+    private func adoptLiveLoginIfNeeded() {
+        guard !isDemo, !isBusy, !pendingNewLogin, editor == nil,
+              let live, live.file != nil, live.matchingProfileID == nil,
+              let identity = live.identity,
+              !Self.declinedAccountIDs.contains(identity.accountID)
+        else { return }
+        do {
+            let base = (try? switcher.suggestedName()) ?? "Account"
+            var name = base
+            var suffix = 2
+            while profiles.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                name = "\(base) \(suffix)"
+                suffix += 1
+            }
+            let profile = try switcher.saveCurrent(name: name)
+            self.live = try switcher.liveState()
+            profiles = try switcher.profiles()
+            showSuccess("Saved \(profile.displayName) from the current Codex login")
+        } catch {
+            self.error = "Unable to save the current Codex login. \(error.localizedDescription)"
+        }
+    }
+
+    private static let declinedKey = "codexDeclinedAutoSave"
+
+    /// Account ids whose active login was removed on purpose.
+    private static var declinedAccountIDs: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: declinedKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: declinedKey) }
     }
 
     func dismissError() {
@@ -254,6 +289,10 @@ public final class AppModel {
             error = "Enter a name for this account."
             return
         }
+        // Saving by hand undoes an earlier "remove".
+        if let accountID = live?.identity?.accountID {
+            Self.declinedAccountIDs.remove(accountID)
+        }
 
         switch editor {
         case .save:
@@ -306,6 +345,10 @@ public final class AppModel {
     func delete(_ profile: Profile) {
         guard !pendingNewLogin else { return }
         let name = displayName(for: profile)
+        // The login stays signed in; without this it would be re-saved at once.
+        if profile.id == live?.matchingProfileID, let accountID = profile.identity?.accountID {
+            Self.declinedAccountIDs.insert(accountID)
+        }
         run("Removing \(name)…") {
             try self.switcher.delete(profile.id)
         } onSuccess: {

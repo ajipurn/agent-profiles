@@ -26,14 +26,12 @@ let package = Package(
                 .define("ZSTD_DISABLE_ASM"),
             ]
         ),
-        // Imported from claude-profiles, which predates Swift 6. Stays in
-        // Swift 5 mode until it passes strict concurrency checking.
+        // Imported from claude-profiles.
         .target(
             name: "ClaudeProfilesCore",
-            dependencies: ["CZstd"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            dependencies: ["CZstd"]
         ),
-        // Imported from codex-profiles (Swift 6, strict concurrency).
+        // Imported from codex-profiles.
         .target(name: "CodexProfilesCore"),
         // Menu card, account rows, switcher and menu bar icon shared by both
         // providers (CodexBar-style).
@@ -47,7 +45,6 @@ let package = Package(
         .executableTarget(
             name: "AgentProfiles",
             dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI"],
-            swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
@@ -63,8 +60,7 @@ let package = Package(
         // Claude core tests (Swift Testing — runs on Command Line Tools too).
         .testTarget(
             name: "ClaudeProfilesCoreTests",
-            dependencies: ["ClaudeProfilesCore"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            dependencies: ["ClaudeProfilesCore"]
         ),
     ]
 )

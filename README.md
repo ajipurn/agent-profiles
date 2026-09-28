@@ -1,5 +1,7 @@
 # Agent Profiles
 
+<img src="docs/icon.png" width="128" alt="Agent Profiles icon">
+
 A macOS menu bar app for switching Claude and Codex accounts and keeping an
 eye on their usage limits. It merges
 [Claude Profiles](https://github.com/ajipurn/claude-profiles) and
@@ -41,9 +43,42 @@ The menu follows [CodexBar](https://github.com/steipete/CodexBar)'s design:
   history, CLI setup), Codex (accounts, favorites, rename, remove, sign-in,
   options), About.
 
-Everything both old apps did is still there. The hotkeys (⌘⌥1…9),
-`claudeprofiles://` URLs and low-limit alerts are unchanged. The app and menu
-bar icons are Codex Profiles' for now.
+Everything both old apps did is still there.
+
+The app icon, two switches offset like ⇄ in Claude's orange and Codex's teal,
+is drawn in code: `swift scripts/make-icon.swift` regenerates
+`Resources/AppIcon.icns` and `docs/icon.png`.
+
+## Existing logins
+
+No sign-in step for sessions that are already on the Mac:
+
+- **Codex:** a login in `~/.codex/auth.json` that no saved account matches is
+  saved automatically, named after its email. Removing the active account
+  in Settings keeps it from being saved again.
+- **Claude:** if Claude is signed in but profiles were never set up, the
+  current login becomes the first profile ("main") on its own, but only
+  while Claude.app is quit, so nothing restarts. With Claude running, use
+  Set Up Profiles… in the menu.
+
+## Shortcuts and scripting
+
+- **⌘⌥1…9:** switch to the Nth Claude profile, in the order set in Settings.
+- **⌃⌥1…9:** switch to the Nth Codex account, favorites first, then by name.
+- **URLs** (Raycast, Alfred, shell):
+
+  | URL | Does |
+  | --- | --- |
+  | `agentprofiles://claude/<name>` | switches Claude Desktop |
+  | `agentprofiles://claude-cli/<name>` | switches the Claude Code profile (`Default` = plain `~/.claude`) |
+  | `agentprofiles://codex/<name>` | switches Codex (saved name, label or email) |
+  | `agentprofiles://open[/<pane>]` | opens Settings (`general`, `claude`, `codex`, `about`) |
+
+  Claude Profiles' `claudeprofiles://switch|switch-cli|open` still work.
+- **Notifications:** a switch started from the menu, a hotkey or a URL
+  reports when it is done. When the active account of either provider drops
+  to 10% of its session window, a notification suggests the account with
+  the most left; clicking it switches.
 
 ## Compatibility with the old apps
 
@@ -74,8 +109,7 @@ The code was imported from codex-profiles@47210c3 and claude-profiles@0c934d9.
 The first commit holds it unchanged; the second holds the changes for the
 merge. Earlier history stays in the original repositories.
 
-`ClaudeProfilesCore` and the app shell still build in Swift 5 mode. The Codex
-modules keep Swift 6 strict concurrency.
+Every target builds in Swift 6 language mode (strict concurrency).
 
 ## Building without Xcode
 
@@ -86,8 +120,6 @@ override.
 
 ## Next
 
-- **Phase 2 (rest):** Codex in the hotkeys, URL scheme and notifications, and
-  the Claude code moved to Swift 6.
 - **Phase 3:** release pipeline (universal build, Sparkle key and feed), plus a
   last release of each old app that points its users here.
 

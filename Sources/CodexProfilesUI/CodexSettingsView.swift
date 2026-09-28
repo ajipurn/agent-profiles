@@ -56,7 +56,7 @@ public struct CodexSettingsView: View {
         ) { profile in
             Button("Remove", role: .destructive) { model.delete(profile) }
         } message: { _ in
-            Text("Its saved login is deleted. If it is the active account, Codex stays signed in.")
+            Text("Its saved login is deleted. If it is the active account, Codex stays signed in and it is not saved again automatically.")
         }
         .onAppear { model.refresh() }
     }
@@ -122,6 +122,8 @@ public struct CodexSettingsView: View {
             Text("Accounts")
         } footer: {
             HStack {
+                Text("⌃⌥1…9 switches from anywhere: favorites first, then by name.")
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("Add Account…") { model.beginAdd() }
                     .disabled(model.isBusy || model.pendingNewLogin)

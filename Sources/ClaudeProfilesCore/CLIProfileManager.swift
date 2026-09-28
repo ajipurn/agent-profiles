@@ -6,9 +6,9 @@ import Foundation
 /// by the dir's path). A tiny `claude` shim on PATH reads the selected profile
 /// name from a text file at every launch, so switching = rewriting that file —
 /// it applies to `claude` commands started from then on, never to running ones.
-public final class CLIProfileManager {
+public final class CLIProfileManager: Sendable {
     public let home: URL
-    private let fm = FileManager.default
+    private var fm: FileManager { .default }
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.home = home.standardizedFileURL

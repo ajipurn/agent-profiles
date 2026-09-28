@@ -1,11 +1,12 @@
 import Foundation
+import os
 import CZstd
 
 /// The official usage-limit numbers for one account, as last seen by Claude
 /// Desktop itself. Read from the profile's own HTTP cache — the app makes no
 /// network requests and touches no cookies or tokens.
-public struct ProfileUsage: Equatable {
-    public struct Window: Equatable {
+public struct ProfileUsage: Equatable, Sendable {
+    public struct Window: Equatable, Sendable {
         public let percent: Double
         public let resetsAt: Date?
         /// A window whose reset time has passed says nothing about now.
@@ -39,15 +40,14 @@ public enum UsageReader {
 
     /// Parse results keyed by file path, so the 60-second poll only re-reads
     /// entries whose (mtime, size) changed. `usage == nil` remembers "not a
-    /// usage entry" — the common case for most cache files. Guarded by a lock:
+    /// usage entry" — the common case for most cache files. Behind a lock:
     /// profiles are scanned concurrently.
-    private struct ParsedEntry {
+    private struct ParsedEntry: Sendable {
         let mtime: Date
         let size: Int
         let usage: ProfileUsage?
     }
-    private static var parsedCache: [String: ParsedEntry] = [:]
-    private static let parsedLock = NSLock()
+    private static let parsedCache = OSAllocatedUnfairLock(initialState: [String: ParsedEntry]())
 
     /// Newest cached usage snapshot in `dir`. When `orgIDs` is non-empty and
     /// any entry matches one of them, only those entries are considered — a
@@ -68,9 +68,7 @@ public enum UsageReader {
             else { continue }
             seen.insert(file.path)
 
-            parsedLock.lock()
-            let hit = parsedCache[file.path]
-            parsedLock.unlock()
+            let hit = parsedCache.withLock { $0[file.path] }
             if let hit, hit.mtime == mtime, hit.size == size {
                 if let usage = hit.usage { found.append(usage) }
                 continue
@@ -83,19 +81,19 @@ public enum UsageReader {
             } else {
                 parsed = nil
             }
-            parsedLock.lock()
-            parsedCache[file.path] = ParsedEntry(mtime: mtime, size: size, usage: parsed)
-            parsedLock.unlock()
+            let entry = ParsedEntry(mtime: mtime, size: size, usage: parsed)
+            parsedCache.withLock { $0[file.path] = entry }
             if let parsed { found.append(parsed) }
         }
 
         // Evicted cache files must not pin stale results (or memory).
         let prefix = cacheDir.path + "/"
-        parsedLock.lock()
-        for key in parsedCache.keys where key.hasPrefix(prefix) && !seen.contains(key) {
-            parsedCache.removeValue(forKey: key)
+        let live = seen
+        parsedCache.withLock { cache in
+            for key in cache.keys where key.hasPrefix(prefix) && !live.contains(key) {
+                cache.removeValue(forKey: key)
+            }
         }
-        parsedLock.unlock()
 
         let matching = found.filter { orgIDs.contains($0.orgID) }
         let pool = (orgIDs.isEmpty || matching.isEmpty) ? found : matching

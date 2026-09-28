@@ -29,6 +29,7 @@
 			<string>dev.aji.AgentProfiles</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>agentprofiles</string>
 				<string>claudeprofiles</string>
 			</array>
 		</dict>
