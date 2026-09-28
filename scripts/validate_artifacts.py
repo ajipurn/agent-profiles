@@ -34,7 +34,9 @@ def validate(out, require_universal=False):
             with tempfile.TemporaryDirectory() as folder:
                 executable = Path(folder, "AgentProfiles")
                 executable.write_bytes(zipped.read("Agent Profiles.app/Contents/MacOS/AgentProfiles"))
-                subprocess.run(["lipo", str(executable), "-verify_arch", "arm64", "x86_64"], check=True)
+                # Newer lipo checks one architecture per call.
+                for arch in ("arm64", "x86_64"):
+                    subprocess.run(["lipo", str(executable), "-verify_arch", arch], check=True)
     for key, expected in bundle_values(config).items():
         assert info.get(key) == expected, f"Bundle metadata mismatch: {key}"
     print("Release URLs, archive length, version, minimum OS, and embedded update settings verified")
