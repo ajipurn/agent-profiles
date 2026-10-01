@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ClaudeProfilesCore
+import PlatformSupport
 
 final class ProfileManagerTests {
     let fm = FileManager.default
@@ -32,8 +33,8 @@ final class ProfileManagerTests {
         (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
     }
 
-    func isSymlink(_ url: URL) -> Bool { itemType(url) == .typeSymbolicLink }
-    func isRealDir(_ url: URL) -> Bool { itemType(url) == .typeDirectory }
+    func isSymlink(_ url: URL) -> Bool { DirectoryLink.isLink(url) } // a junction on Windows
+    func isRealDir(_ url: URL) -> Bool { itemType(url) == .typeDirectory && !isSymlink(url) }
 
     func profile(_ name: String) -> URL { pm.profilesDir.appendingPathComponent(name) }
 
@@ -157,7 +158,7 @@ final class ProfileManagerTests {
         for tree in ProfileManager.sessionTrees {
             let link = profile("fresh").appendingPathComponent(tree)
             #expect(isSymlink(link), "\(tree) should be pre-linked")
-            #expect(try fm.destinationOfSymbolicLink(atPath: link.path)
+            #expect(try DirectoryLink.destination(of: link).path
                 == pm.sharedDir.appendingPathComponent(tree).path)
         }
     }
@@ -247,7 +248,7 @@ final class ProfileManagerTests {
             for tree in ProfileManager.sessionTrees {
                 let link = profile(profileName).appendingPathComponent(tree)
                 #expect(isSymlink(link), "\(profileName)/\(tree) should be a symlink")
-                #expect(try fm.destinationOfSymbolicLink(atPath: link.path)
+                #expect(try DirectoryLink.destination(of: link).path
                     == pm.sharedDir.appendingPathComponent(tree).path)
             }
         }
@@ -262,7 +263,7 @@ final class ProfileManagerTests {
         }
         let other = sharedCode.appendingPathComponent("acct2/org2")
         #expect(isSymlink(other))
-        #expect(try fm.destinationOfSymbolicLink(atPath: other.path) == master.path)
+        #expect(try DirectoryLink.destination(of: other).path == master.path)
 
         // All sessions visible through profile b's path (symlink chain).
         #expect(fm.fileExists(
@@ -344,7 +345,7 @@ final class ProfileManagerTests {
         let master = pm.sharedDir.appendingPathComponent("\(code)/acct1/org1")
         let newcomer = pm.sharedDir.appendingPathComponent("\(code)/acct3/org3")
         #expect(isSymlink(newcomer), "new account's org dir should be linked to master")
-        #expect(try fm.destinationOfSymbolicLink(atPath: newcomer.path) == master.path)
+        #expect(try DirectoryLink.destination(of: newcomer).path == master.path)
         #expect(fm.fileExists(atPath: master.appendingPathComponent("local_9.json").path))
     }
 
@@ -370,7 +371,7 @@ final class ProfileManagerTests {
         let org = pm.sharedDir
             .appendingPathComponent("\(code)/acct-fresh/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         #expect(isSymlink(org), "org dir must be pre-linked to the master")
-        #expect(try fm.destinationOfSymbolicLink(atPath: org.path) == master.path)
+        #expect(try DirectoryLink.destination(of: org).path == master.path)
         // Combined list readable through the fresh profile's own path.
         #expect(fm.fileExists(atPath: profile("fresh")
             .appendingPathComponent("\(code)/acct-fresh/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/local_1.json").path))
@@ -398,7 +399,7 @@ final class ProfileManagerTests {
         let org = pm.sharedDir
             .appendingPathComponent("\(code)/acct-live/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         #expect(isSymlink(org))
-        #expect(try fm.destinationOfSymbolicLink(atPath: org.path)
+        #expect(try DirectoryLink.destination(of: org).path
             == pm.sharedDir.appendingPathComponent("\(code)/acct1/org1").path)
 
         // A pending merge (two real org dirs) makes the master ambiguous — no-op then.
@@ -553,7 +554,7 @@ final class ProfileManagerTests {
 
     /// Sessions the active account's sidebar can actually see (its org path, symlinks resolved).
     func visibleSessions(_ a: Acct) -> Set<String> {
-        let items = (try? fm.contentsOfDirectory(atPath: activeOrg(a).resolvingSymlinksInPath().path)) ?? []
+        let items = (try? fm.contentsOfDirectory(atPath: DirectoryLink.resolvingLinks(activeOrg(a)).path)) ?? []
         return Set(items)
     }
 
@@ -610,7 +611,7 @@ final class ProfileManagerTests {
         // before any relink saw it (the first-login / new-org window).
         try pm.switchTo(name: work.profile)
         let island = activeOrg(work)
-        try fm.removeItem(at: island)                      // drop the prelinked symlink
+        try DirectoryLink.remove(at: island)               // drop the prelinked symlink
         try write("w1", to: island.appendingPathComponent("w1"))
 
         try pm.enableSharedHistory(promoteActive: true)    // heal
