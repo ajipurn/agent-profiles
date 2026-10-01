@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- New "Follow the active app" option (Settings → General): bringing Claude or the Codex app to the front switches the menu bar icon to that provider; other apps, including terminals, keep the last one
+- Picking a tab in the menu still switches the icon right away
+
 ## 1.1.0
 
 - Picking Claude or Codex in the menu now also switches the menu bar icon (and Settings' "Show usage for") to that provider
