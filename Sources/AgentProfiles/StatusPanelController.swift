@@ -3,12 +3,17 @@ import SwiftUI
 import AgentUI
 import CodexProfilesUI
 
-/// The status item's popover, OpenUsage-style: estimated cost, provider
+/// The status item's panel, OpenUsage-style: estimated cost, provider
 /// switcher, the selected provider's usage card, other accounts to switch
-/// to, then actions. Its content is rebuilt each time it opens.
+/// to, then actions. A borderless window of our own rather than an
+/// NSPopover: a popover keeps the size it measured on opening, so content
+/// that loads afterwards left its translucent frame showing around ours.
+/// Its content is rebuilt each time it opens.
 @MainActor
-final class StatusPanelController: NSObject, NSPopoverDelegate {
-    private let popover = NSPopover()
+final class StatusPanelController: NSObject {
+    private var window: PanelWindow?
+    private weak var button: NSStatusBarButton?
+    private var monitors: [Any] = []
     private let claude: AppState
     private let codex: AppModel
     private let cost: CostModel
@@ -19,6 +24,8 @@ final class StatusPanelController: NSObject, NSPopoverDelegate {
     private let tab = TabSelection()
 
     static let width: CGFloat = 340
+    /// Gap between the menu bar and the panel.
+    private static let gap: CGFloat = 4
 
     init(claude: AppState, codex: AppModel, cost: CostModel,
          defaultTab: @escaping () -> MenuBarProvider,
@@ -33,34 +40,78 @@ final class StatusPanelController: NSObject, NSPopoverDelegate {
         self.openSettings = openSettings
         self.switchCodex = switchCodex
         super.init()
-        popover.behavior = .transient
-        popover.animates = false
-        popover.hasFullSizeContent = true // our solid background reaches the edges
-        popover.delegate = self
     }
 
-    var isShown: Bool { popover.isShown }
+    var isShown: Bool { window != nil }
 
     func toggle(from button: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(nil)
+        if isShown {
+            close()
             return
         }
+        self.button = button
         tab.selected = defaultTab() // always open on the provider the icon shows
-        let host = NSHostingController(rootView: StatusPanelView(
-            tab: tab, claude: claude, codex: codex, cost: cost, actions: actions))
-        host.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = host
+        let host = NSHostingView(rootView: StatusPanelView(
+            tab: tab, claude: claude, codex: codex, cost: cost, actions: actions,
+            onResize: { [weak self] size in self?.place(height: size.height) }))
+        host.sizingOptions = [] // place(height:) owns the window size
+        let panel = PanelWindow(contentView: host)
+        window = panel
+        place(height: host.fittingSize.height)
         codex.startLiveUsagePolling()
         claude.refreshUsage()
         cost.refresh()
         NSApp.activate(ignoringOtherApps: true) // so the panel takes keys (⌘R, ⌘,, ⌘Q)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        panel.makeKeyAndOrderFront(nil)
+        button.highlight(true)
+        watchForDismissal(panel)
     }
 
-    func popoverDidClose(_ notification: Notification) {
+    func close() {
+        guard let window else { return }
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
+        window.orderOut(nil)
+        self.window = nil
+        button?.highlight(false)
         codex.stopLiveUsagePolling()
-        popover.contentViewController = nil
+    }
+
+    /// Hangs the panel under the status item, its top edge fixed so it grows
+    /// and shrinks downward, kept on screen.
+    private func place(height: CGFloat) {
+        guard let window, let button, let buttonWindow = button.window,
+              let screen = buttonWindow.screen ?? NSScreen.main else { return }
+        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let visible = screen.visibleFrame
+        var x = anchor.midX - Self.width / 2
+        x = min(max(x, visible.minX + 8), visible.maxX - Self.width - 8)
+        let top = anchor.minY - Self.gap
+        window.setFrame(NSRect(x: x, y: top - height, width: Self.width, height: height), display: true)
+    }
+
+    /// Clicks elsewhere, Escape, or another app taking focus close the panel.
+    private func watchForDismissal(_ panel: PanelWindow) {
+        panel.onCancel = { [weak self] in self?.close() }
+        NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey),
+                                               name: NSWindow.didResignKeyNotification, object: panel)
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            Task { @MainActor in self?.close() }
+        }) {
+            monitors.append(global)
+        }
+    }
+
+    @objc private func panelResignedKey() {
+        // Our own windows (a dialog, Settings) are handled by the actions
+        // that open them; anything else means the user moved on.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window?.isKeyWindow == false else { return }
+            // The status item's own click toggles; let it.
+            if let event = NSApp.currentEvent, event.window == self.button?.window { return }
+            self.close()
+        }
     }
 
     private var actions: PanelActions {
@@ -74,7 +125,7 @@ final class StatusPanelController: NSObject, NSPopoverDelegate {
             run: { [weak self] action in
                 guard let self else { return }
                 // Anything that opens a window or dialog needs the panel gone first.
-                if action.closesPanel { self.popover.performClose(nil) }
+                if action.closesPanel { self.close() }
                 self.perform(action)
             })
     }
@@ -137,6 +188,8 @@ private struct StatusPanelView: View {
     @ObservedObject var cost: CostModel
     @AppStorage(Preferences.showCostKey) private var showCost = true
     let actions: PanelActions
+    /// The panel window follows the content's height.
+    let onResize: (CGSize) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -156,9 +209,22 @@ private struct StatusPanelView: View {
             footer
         }
         .padding(14)
-        .padding(.top, 4)
         .frame(width: StatusPanelController.width)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            RoundedRectangle(cornerRadius: PanelWindow.cornerRadius, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: PanelWindow.cornerRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: PanelWindow.cornerRadius, style: .continuous))
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: PanelSizeKey.self, value: proxy.size)
+        })
+        .onPreferenceChange(PanelSizeKey.self) { size in onResize(size) }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
@@ -271,5 +337,40 @@ private struct StatusPanelView: View {
                 .keyboardShortcut("q")
         }
         .padding(.top, 2)
+    }
+}
+
+private struct PanelSizeKey: PreferenceKey {
+    static let defaultValue = CGSize.zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
+/// Borderless, transparent window holding the panel; the rounded card and
+/// its shadow are all there is to see.
+final class PanelWindow: NSPanel {
+    static let cornerRadius: CGFloat = 14
+    var onCancel: (() -> Void)?
+
+    init(contentView: NSView) {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: StatusPanelController.width, height: 100),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        self.contentView = contentView
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .popUpMenu
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        isMovable = false
+        isReleasedWhenClosed = false
+        hidesOnDeactivate = false
+    }
+
+    override var canBecomeKey: Bool { true }
+
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        invalidateShadow() // the shadow follows the rounded card, not the frame
     }
 }
