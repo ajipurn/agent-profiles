@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.6
+
+- Refined app icon: larger, bolder gauge arcs that fill the dial, with a softly lit center
+
 ## 1.3.5
 
 - More accurate cost estimate: Codex turns on the priority (or flex) tier and long prompts are priced at their own rates, Claude fast mode at its 2x rate, US-only inference at 1.1x, and web searches at $10 per 1,000
