@@ -122,7 +122,7 @@ func drawArc(center: CGPoint, radius: CGFloat, width: CGFloat, from: CGFloat, to
     sheen.stroke()
     cg.restoreGState()
 
-    let d = width - 30
+    let d = width * 0.6
     let knob = CGRect(x: head.x - d / 2, y: head.y - d / 2, width: d, height: d)
     withShadow(NSColor.black.withAlphaComponent(0.35), blur: 16, offset: NSSize(width: 0, height: -5)) {
         NSColor.white.setFill()
@@ -135,16 +135,30 @@ func drawArc(center: CGPoint, radius: CGFloat, width: CGFloat, from: CGFloat, to
 func drawIcon() {
     drawBackground()
     let center = CGPoint(x: canvas / 2, y: canvas / 2)
-    drawTicks(center: center, radius: 370)
+    drawTicks(center: center, radius: 392)
     // Two arcs chasing each other round the dial: a swap, and two meters.
-    // Recessed face inside the arcs.
-    let face = NSBezierPath(ovalIn: CGRect(x: center.x - 186, y: center.y - 186, width: 372, height: 372))
+    // Sized to fill the dial, so the middle reads as a hub, not a hole.
+    let radius: CGFloat = 282, width: CGFloat = 158
+    // Recessed face inside the arcs, lit by the arcs around it.
+    let faceRadius = radius - width / 2 - 26
+    let faceRect = CGRect(x: center.x - faceRadius, y: center.y - faceRadius,
+                          width: faceRadius * 2, height: faceRadius * 2)
+    let face = NSBezierPath(ovalIn: faceRect)
     NSGradient(colors: [inkDeep.withAlphaComponent(0.9), ink.withAlphaComponent(0.6)])!.draw(in: face, angle: -90)
+    NSGraphicsContext.saveGraphicsState()
+    face.addClip()
+    NSGradient(colors: [teal.withAlphaComponent(0.16), teal.withAlphaComponent(0)])!
+        .draw(fromCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: 0,
+              toCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: faceRadius * 1.1, options: [])
+    NSGradient(colors: [orange.withAlphaComponent(0.16), orange.withAlphaComponent(0)])!
+        .draw(fromCenter: NSPoint(x: center.x, y: faceRect.minY), radius: 0,
+              toCenter: NSPoint(x: center.x, y: faceRect.minY), radius: faceRadius * 1.1, options: [])
+    NSGraphicsContext.restoreGraphicsState()
     face.lineWidth = 3
-    NSColor.white.withAlphaComponent(0.07).setStroke()
+    NSColor.white.withAlphaComponent(0.08).setStroke()
     face.stroke()
-    drawArc(center: center, radius: 262, width: 84, from: 25, to: 155, color: teal, deep: tealDeep)
-    drawArc(center: center, radius: 262, width: 84, from: 205, to: 335, color: orange, deep: orangeDeep)
+    drawArc(center: center, radius: radius, width: width, from: 30, to: 150, color: teal, deep: tealDeep)
+    drawArc(center: center, radius: radius, width: width, from: 210, to: 330, color: orange, deep: orangeDeep)
 }
 
 func png(pixels: Int) -> Data {
