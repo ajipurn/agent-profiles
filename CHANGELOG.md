@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- "Follow the active app" is now on by default: bringing Claude or the Codex app to the front switches the menu bar icon to that provider. Turn it off in Settings → General
+
 ## 1.2.0
 
 - New "Follow the active app" option (Settings → General): bringing Claude or the Codex app to the front switches the menu bar icon to that provider; other apps, including terminals, keep the last one
