@@ -14,6 +14,7 @@ final class StatusPanelController: NSObject {
     private var window: PanelWindow?
     private weak var button: NSStatusBarButton?
     private var monitors: [Any] = []
+    private var activationObserver: Any?
     private let claude: AppState
     private let codex: AppModel
     private let cost: CostModel
@@ -71,7 +72,8 @@ final class StatusPanelController: NSObject {
         guard let window else { return }
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
-        NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
+        activationObserver = nil
         window.orderOut(nil)
         self.window = nil
         button?.highlight(false)
@@ -91,26 +93,24 @@ final class StatusPanelController: NSObject {
         window.setFrame(NSRect(x: x, y: top - height, width: Self.width, height: height), display: true)
     }
 
-    /// Clicks elsewhere, Escape, or another app taking focus close the panel.
+    /// Clicks in other apps, switching to another app, or Escape close the
+    /// panel. Not losing key status: an accessory app is usually inactive
+    /// when its status item is clicked, and the panel loses key right after
+    /// opening, which closed it before it was ever seen (1.3.1).
     private func watchForDismissal(_ panel: PanelWindow) {
         panel.onCancel = { [weak self] in self?.close() }
-        NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey),
-                                               name: NSWindow.didResignKeyNotification, object: panel)
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             Task { @MainActor in self?.close() }
         }) {
             monitors.append(global)
         }
-    }
-
-    @objc private func panelResignedKey() {
-        // Our own windows (a dialog, Settings) are handled by the actions
-        // that open them; anything else means the user moved on.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.window?.isKeyWindow == false else { return }
-            // The status item's own click toggles; let it.
-            if let event = NSApp.currentEvent, event.window == self.button?.window { return }
-            self.close()
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ownPID else { return }
+            Task { @MainActor in self?.close() }
         }
     }
 

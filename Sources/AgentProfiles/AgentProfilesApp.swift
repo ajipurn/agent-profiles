@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         })
         observeCodex()
 
-        if isDemo { showSettings(.general) }
+        if isDemo, !CommandLine.arguments.contains("--no-settings") { showSettings(.general) }
         #if DEBUG
         // Screenshot aids: `--settings <pane>` opens a Settings pane,
         // `--open-menu` opens the menu right after launch.
