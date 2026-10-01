@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Picking Claude or Codex in the menu now also switches the menu bar icon (and Settings' "Show usage for") to that provider
+- Usage bars share one color across providers, so remaining limits read the same at a glance
+- Claude and Codex brand logos (from Lobe Icons) in the menu tabs and Settings sidebar
+
 ## 1.0.1
 
 - Update Sparkle, the app updater, to 2.10.0
