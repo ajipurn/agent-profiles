@@ -12,6 +12,7 @@ import CodexProfilesUI
 @MainActor
 final class StatusPanelController: NSObject {
     private var window: PanelWindow?
+    private var host: NSHostingController<StatusPanelView>?
     private weak var button: NSStatusBarButton?
     private var monitors: [Any] = []
     private var activationObserver: Any?
@@ -27,6 +28,9 @@ final class StatusPanelController: NSObject {
     static let width: CGFloat = 340
     /// Gap between the menu bar and the panel.
     private static let gap: CGFloat = 4
+    /// Never open shorter than this: a zero-height window is never drawn,
+    /// so SwiftUI would never report the real height (1.3.1–1.3.2).
+    private static let minHeight: CGFloat = 200
 
     init(claude: AppState, codex: AppModel, cost: CostModel,
          defaultTab: @escaping () -> MenuBarProvider,
@@ -52,13 +56,23 @@ final class StatusPanelController: NSObject {
         }
         self.button = button
         tab.selected = defaultTab() // always open on the provider the icon shows
-        let host = NSHostingView(rootView: StatusPanelView(
+        let host = NSHostingController(rootView: StatusPanelView(
             tab: tab, claude: claude, codex: codex, cost: cost, actions: actions,
-            onResize: { [weak self] size in self?.place(height: size.height) }))
+            onHeightChange: { [weak self] height in self?.place(height: height) }))
         host.sizingOptions = [] // place(height:) owns the window size
-        let panel = PanelWindow(contentView: host)
+        // Measured explicitly up front: fittingSize is 0 here, which left
+        // 1.3.1–1.3.2 with an invisible, zero-height panel.
+        let height = host.sizeThatFits(in: CGSize(width: Self.width, height: 4000)).height
+        // A plain container, so the window's size never follows the hosting
+        // view's constraints.
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: Self.width, height: max(height, Self.minHeight)))
+        host.view.frame = container.bounds
+        host.view.autoresizingMask = [.width, .height]
+        container.addSubview(host.view)
+        let panel = PanelWindow(contentView: container)
+        self.host = host
         window = panel
-        place(height: host.fittingSize.height)
+        place(height: height)
         codex.startLiveUsagePolling()
         claude.refreshUsage()
         cost.refresh()
@@ -76,6 +90,7 @@ final class StatusPanelController: NSObject {
         activationObserver = nil
         window.orderOut(nil)
         self.window = nil
+        host = nil
         button?.highlight(false)
         codex.stopLiveUsagePolling()
     }
@@ -90,6 +105,7 @@ final class StatusPanelController: NSObject {
         var x = anchor.midX - Self.width / 2
         x = min(max(x, visible.minX + 8), visible.maxX - Self.width - 8)
         let top = anchor.minY - Self.gap
+        let height = max(height.rounded(.up), Self.minHeight)
         window.setFrame(NSRect(x: x, y: top - height, width: Self.width, height: height), display: true)
     }
 
@@ -181,15 +197,15 @@ final class TabSelection: ObservableObject {
     @Published var selected: MenuBarProvider = .claude
 }
 
-private struct StatusPanelView: View {
+struct StatusPanelView: View {
     @ObservedObject var tab: TabSelection
     @ObservedObject var claude: AppState
     let codex: AppModel // @Observable: reading it in `body` keeps it live
     @ObservedObject var cost: CostModel
     @AppStorage(Preferences.showCostKey) private var showCost = true
     let actions: PanelActions
-    /// The panel window follows the content's height.
-    let onResize: (CGSize) -> Void
+    /// The window follows the content as data loads or the tab changes.
+    let onHeightChange: (CGFloat) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -221,10 +237,14 @@ private struct StatusPanelView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: PanelWindow.cornerRadius, style: .continuous))
         .background(GeometryReader { proxy in
-            Color.clear.preference(key: PanelSizeKey.self, value: proxy.size)
+            Color.clear
+                .onAppear { report(proxy.size.height) }
+                .onChange(of: proxy.size.height) { _, height in report(height) }
         })
-        .onPreferenceChange(PanelSizeKey.self) { size in onResize(size) }
-        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private func report(_ height: CGFloat) {
+        if height > 1 { onHeightChange(height) }
     }
 
     @ViewBuilder
@@ -340,11 +360,6 @@ private struct StatusPanelView: View {
     }
 }
 
-private struct PanelSizeKey: PreferenceKey {
-    static let defaultValue = CGSize.zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
 /// Borderless, transparent window holding the panel; the rounded card and
 /// its shadow are all there is to see.
 final class PanelWindow: NSPanel {
@@ -374,3 +389,4 @@ final class PanelWindow: NSPanel {
         invalidateShadow() // the shadow follows the rounded card, not the frame
     }
 }
+

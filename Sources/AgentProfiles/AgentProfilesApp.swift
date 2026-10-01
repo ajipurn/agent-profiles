@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem.autosaveName = "dev.aji.AgentProfiles.status"
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.imagePosition = .imageLeading
         lastPickedProvider = Preferences.menuBarProvider
         activeAppProvider = MenuBarProvider(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
@@ -318,7 +319,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func togglePanel() {
         guard let button = statusItem.button else { return }
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
+            showQuickMenu()
+            return
+        }
         panel.toggle(from: button)
+    }
+
+    /// Right-click (or Control-click): the few things that must always work,
+    /// even if the panel doesn't.
+    private func showQuickMenu() {
+        if panel.isShown { panel.close() }
+        let menu = NSMenu()
+        menu.addItem(QuickMenuItem("Settings…", key: ",") { [weak self] in self?.showSettings(.general) })
+        menu.addItem(QuickMenuItem("Check for Updates…") { [weak self] in self?.updates.checkForUpdates() })
+        menu.addItem(.separator())
+        menu.addItem(QuickMenuItem("Quit Agent Profiles", key: "q") { NSApp.terminate(nil) })
+        // Attached only for this click, so a left click keeps opening the panel.
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
     }
 
     /// Two-bar template icon (session over weekly) for the provider picked in
@@ -427,4 +448,20 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner])
     }
+}
+
+/// A menu item that runs a closure.
+private final class QuickMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, key: String = "", handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: key)
+        target = self
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func fire() { handler() }
 }
