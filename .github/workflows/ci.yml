@@ -54,3 +54,9 @@ jobs:
       - name: Run Swift tests
         continue-on-error: true
         run: swift test
+      - name: Smoke-test the Windows research script
+        # Windows PowerShell 5.1, which is what most users will run it with.
+        shell: powershell
+        run: |
+          .\scripts\windows-research.ps1
+          if (-not (Test-Path .\scripts\windows-research.txt)) { exit 1 }
