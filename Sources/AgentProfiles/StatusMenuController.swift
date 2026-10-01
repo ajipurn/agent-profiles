@@ -56,6 +56,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private func select(_ provider: MenuBarProvider) {
         guard provider != tab.selected else { return }
         tab.selected = provider
+        // The menu bar icon (and Settings' "Show usage for") follows the tab.
+        Preferences.menuBarProvider = provider
         // Keep the switcher row (it is handling this click); replace the rest.
         while menu.numberOfItems > 1 { menu.removeItem(at: 1) }
         addBody()
@@ -120,7 +122,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             menu?.cancelTracking()
             perform()
         }) { highlight in
-            AccountRowView(account: account, tint: provider.style.accent, isEnabled: enabled, highlight: highlight)
+            AccountRowView(account: account, tint: ProviderStyle.usageTint, isEnabled: enabled, highlight: highlight)
         }
         return item
     }

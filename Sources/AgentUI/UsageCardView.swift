@@ -70,7 +70,7 @@ public struct UsageCardView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(model.limits) { limit in
-                            LimitRow(limit: limit, tint: model.provider.accent, now: context.date)
+                            LimitRow(limit: limit, tint: ProviderStyle.usageTint, now: context.date)
                         }
                     }
                 }
@@ -214,14 +214,13 @@ public struct ProviderSwitcherView: View {
             ForEach(tiles) { tile in
                 let isSelected = tile.id == selected
                 VStack(spacing: 3) {
-                    HStack(spacing: 4) {
-                        Image(systemName: tile.style.symbol)
-                            .font(.system(size: 11, weight: .semibold))
+                    HStack(spacing: 5) {
+                        ProviderLogo(tile.style, size: 13)
                         Text(tile.style.name)
                             .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                     }
                     .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                    UsageBar(remaining: tile.remaining, tint: tile.style.accent, height: 3, onHighlight: isSelected)
+                    UsageBar(remaining: tile.remaining, tint: ProviderStyle.usageTint, height: 3, onHighlight: isSelected)
                         .frame(width: 56)
                 }
                 .frame(maxWidth: .infinity)

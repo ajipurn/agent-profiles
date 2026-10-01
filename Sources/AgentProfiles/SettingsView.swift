@@ -28,6 +28,15 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Provider panes show the brand mark instead of a symbol.
+    var logo: ProviderStyle? {
+        switch self {
+        case .claude: .claude
+        case .codex: .codex
+        default: nil
+        }
+    }
+
     var tint: Color {
         switch self {
         case .general: .gray
@@ -52,9 +61,15 @@ struct SettingsView: View {
                 Label {
                     Text(item.title)
                 } icon: {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
+                    Group {
+                        if let logo = item.logo {
+                            ProviderLogo(logo, size: 13)
+                        } else {
+                            Image(systemName: item.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(.white)
                         .frame(width: 20, height: 20)
                         .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(item.tint.gradient))
                 }

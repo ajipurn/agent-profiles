@@ -12,4 +12,8 @@ public struct ProviderStyle: Equatable, Sendable {
     public static let codex = ProviderStyle(
         name: "Codex", symbol: "chevron.left.forwardslash.chevron.right",
         accent: Color(red: 0.13, green: 0.66, blue: 0.56))
+
+    /// Remaining-limit bars use one tint for every provider so they read the
+    /// same at a glance; `accent` stays for provider identity.
+    public static let usageTint = Color.accentColor
 }
