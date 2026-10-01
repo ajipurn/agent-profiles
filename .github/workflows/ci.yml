@@ -43,8 +43,9 @@ jobs:
           persist-credentials: false
       - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057 # v0.5.0
         with:
-          swift-version: swift-6.4-release
-          swift-build: 6.4-RELEASE
+          # swift.org names this release 6.4.0; the 6.4 paths 404.
+          swift-version: swift-6.4.0-release
+          swift-build: 6.4.0-RELEASE
       - name: Build the cores
         run: swift build --build-tests
       - name: Run Codex checks
