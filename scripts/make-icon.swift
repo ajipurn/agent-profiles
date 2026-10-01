@@ -3,7 +3,7 @@
 // preview at docs/icon.png. Usage: swift scripts/make-icon.swift [repo root]
 //
 // The mark: a dial with a fine scale and two gauge arcs chasing each other
-// round it, Codex's teal over Claude's orange, each ending in a white knob.
+// round it, Codex's blue over Claude's orange, each ending in a white knob.
 // It reads as a swap (switching accounts) and as two meters (the usage each
 // one has left).
 import AppKit
@@ -17,8 +17,8 @@ let body = CGRect(x: 100, y: 100, width: 824, height: 824)
 
 let orange = NSColor(srgbRed: 0.95, green: 0.55, blue: 0.38, alpha: 1)
 let orangeDeep = NSColor(srgbRed: 0.80, green: 0.35, blue: 0.23, alpha: 1)
-let teal = NSColor(srgbRed: 0.24, green: 0.84, blue: 0.72, alpha: 1)
-let tealDeep = NSColor(srgbRed: 0.06, green: 0.54, blue: 0.50, alpha: 1)
+let blue = NSColor(srgbRed: 0.45, green: 0.58, blue: 1.0, alpha: 1)
+let blueDeep = NSColor(srgbRed: 0.18, green: 0.25, blue: 0.97, alpha: 1)
 let ink = NSColor(srgbRed: 0.14, green: 0.15, blue: 0.20, alpha: 1)
 let inkDeep = NSColor(srgbRed: 0.05, green: 0.06, blue: 0.09, alpha: 1)
 
@@ -60,7 +60,7 @@ func drawBackground() {
     // Faint provider-colored light behind each arc.
     NSGradient(colors: [orange.withAlphaComponent(0.20), orange.withAlphaComponent(0)])!
         .draw(fromCenter: NSPoint(x: 512, y: 300), radius: 0, toCenter: NSPoint(x: 512, y: 300), radius: 420, options: [])
-    NSGradient(colors: [teal.withAlphaComponent(0.16), teal.withAlphaComponent(0)])!
+    NSGradient(colors: [blue.withAlphaComponent(0.16), blue.withAlphaComponent(0)])!
         .draw(fromCenter: NSPoint(x: 512, y: 724), radius: 0, toCenter: NSPoint(x: 512, y: 724), radius: 420, options: [])
     // Top sheen.
     NSGradient(colors: [NSColor.white.withAlphaComponent(0.09), NSColor.white.withAlphaComponent(0)])!
@@ -147,7 +147,7 @@ func drawIcon() {
     NSGradient(colors: [inkDeep.withAlphaComponent(0.9), ink.withAlphaComponent(0.6)])!.draw(in: face, angle: -90)
     NSGraphicsContext.saveGraphicsState()
     face.addClip()
-    NSGradient(colors: [teal.withAlphaComponent(0.16), teal.withAlphaComponent(0)])!
+    NSGradient(colors: [blue.withAlphaComponent(0.16), blue.withAlphaComponent(0)])!
         .draw(fromCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: 0,
               toCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: faceRadius * 1.1, options: [])
     NSGradient(colors: [orange.withAlphaComponent(0.16), orange.withAlphaComponent(0)])!
@@ -157,7 +157,7 @@ func drawIcon() {
     face.lineWidth = 3
     NSColor.white.withAlphaComponent(0.08).setStroke()
     face.stroke()
-    drawArc(center: center, radius: radius, width: width, from: 30, to: 150, color: teal, deep: tealDeep)
+    drawArc(center: center, radius: radius, width: width, from: 30, to: 150, color: blue, deep: blueDeep)
     drawArc(center: center, radius: radius, width: width, from: 210, to: 330, color: orange, deep: orangeDeep)
 }
 
