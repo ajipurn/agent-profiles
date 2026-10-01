@@ -30,9 +30,10 @@ enum Preferences {
         set { UserDefaults.standard.set(newValue?.rawValue, forKey: menuBarProviderKey) }
     }
 
-    /// Show the provider of the frontmost Claude or Codex app; off by default.
+    /// Show the provider of the frontmost Claude or Codex app; on unless
+    /// turned off.
     static var followActiveApp: Bool {
-        UserDefaults.standard.bool(forKey: followActiveAppKey)
+        UserDefaults.standard.object(forKey: followActiveAppKey) as? Bool ?? true
     }
 
     /// Percentage text next to the icon; on unless turned off.

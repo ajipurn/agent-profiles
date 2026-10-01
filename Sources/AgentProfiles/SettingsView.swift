@@ -95,7 +95,7 @@ struct GeneralSettingsView: View {
     @ObservedObject var updates: UpdateController
     @AppStorage(Preferences.menuBarProviderKey) private var provider: MenuBarProvider = .claude
     @AppStorage(Preferences.showPercentKey) private var showPercent = true
-    @AppStorage(Preferences.followActiveAppKey) private var followActiveApp = false
+    @AppStorage(Preferences.followActiveAppKey) private var followActiveApp = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
