@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.7
+
+- Codex is now blue, matching its app icon: in the cost ring, the Codex tab, Settings and the app icon's Codex arc
+
 ## 1.3.6
 
 - Refined app icon: larger, bolder gauge arcs that fill the dial, with a softly lit center
