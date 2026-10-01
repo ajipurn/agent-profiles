@@ -1,12 +1,10 @@
 import Foundation
+import PlatformSupport
 
 public enum SecureFile {
     public static func ensureDirectory(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o700))],
-            ofItemAtPath: url.path
-        )
+        try FilePermissions.set(0o700, at: url)
     }
 
     public static func read(_ url: URL) throws -> Data {
@@ -19,19 +17,13 @@ public enum SecureFile {
             .appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
         do {
             try data.write(to: tmp, options: [.withoutOverwriting])
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: mode)],
-                ofItemAtPath: tmp.path
-            )
+            try FilePermissions.set(mode, at: tmp)
             if FileManager.default.fileExists(atPath: url.path) {
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
             } else {
                 try FileManager.default.moveItem(at: tmp, to: url)
             }
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: mode)],
-                ofItemAtPath: url.path
-            )
+            try FilePermissions.set(mode, at: url)
         } catch {
             try? FileManager.default.removeItem(at: tmp)
             throw SwitcherError.io(error.localizedDescription)

@@ -31,3 +31,25 @@ jobs:
         env:
           BUILD_ARCHS: arm64 x86_64
         run: ./scripts/package-app.sh debug
+  windows-core:
+    # Only the cores exist off macOS (see Package.swift). Building them keeps
+    # the Windows port possible; their tests still lean on symlinks and the
+    # POSIX CLI shim, so they report without blocking until that layer lands.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057 # v0.5.0
+        with:
+          swift-version: swift-6.4-release
+          swift-build: 6.4-RELEASE
+      - name: Build the cores
+        run: swift build --build-tests
+      - name: Run Codex checks
+        continue-on-error: true
+        run: swift run CodexProfilesCheck
+      - name: Run Swift tests
+        continue-on-error: true
+        run: swift test
