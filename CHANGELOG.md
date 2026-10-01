@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- New panel in place of the menu, in the style of OpenUsage: provider tabs, a usage card per provider, accounts to switch to, and action buttons
+- Estimated cost card: Today, Yesterday and 30 Days per provider, read from local Claude Code and Codex logs and priced at API list rates (turn it off in Settings → General)
+- Pace on usage bars: blue when on course, yellow when cutting it close, red with the projected run-out time
+- New app icon
+
 ## 1.2.1
 
 - "Follow the active app" is now on by default: bringing Claude or the Codex app to the front switches the menu bar icon to that provider. Turn it off in Settings → General
