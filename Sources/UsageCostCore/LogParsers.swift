@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 /// Reads token usage out of Claude Code and Codex session logs (JSON lines).
 /// Lines that can't carry usage are skipped before any JSON decoding, which
@@ -197,7 +198,7 @@ public enum LogParsers {
             while left > 0 {
                 let length = memchr(cursor, Int32(UInt8(ascii: "\n")), left).map { cursor.distance(to: $0) } ?? left
                 let head = min(length, headLength)
-                if patterns.contains(where: { memmem(cursor, head, $0, $0.count) != nil }) {
+                if patterns.contains(where: { ByteSearch.find($0, in: cursor, count: head) != nil }) {
                     let start = base.distance(to: cursor)
                     ranges.append(start..<start + length)
                 }
@@ -209,7 +210,7 @@ public enum LogParsers {
         for range in ranges { body(data[(origin + range.lowerBound)..<(origin + range.upperBound)]) }
     }
 
-    /// Ranges of the lines containing any needle. memmem jumps between
+    /// Ranges of the lines containing any needle. ByteSearch jumps between
     /// matches, so the bulk of a log (tool output, file contents) is never
     /// walked line by line.
     static func lineRanges(in data: Data, matching needles: [String]) -> [Range<Data.Index>] {
@@ -221,7 +222,7 @@ public enum LogParsers {
             for needle in needles {
                 let pattern = Array(needle.utf8)
                 var offset = 0
-                while offset < count, let hit = memmem(base + offset, count - offset, pattern, pattern.count) {
+                while offset < count, let hit = ByteSearch.find(pattern, in: base + offset, count: count - offset) {
                     let at = base.distance(to: hit)
                     var lineStart = at
                     while lineStart > 0, buffer[lineStart - 1] != UInt8(ascii: "\n") { lineStart -= 1 }

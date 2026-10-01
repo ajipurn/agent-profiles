@@ -39,6 +39,10 @@ var targets: [Target] = [
         path: "Tests/CodexProfilesCheck"
     ),
     .testTarget(
+        name: "PlatformSupportTests",
+        dependencies: ["PlatformSupport"]
+    ),
+    .testTarget(
         name: "UsageCostCoreTests",
         dependencies: ["UsageCostCore"]
     ),
