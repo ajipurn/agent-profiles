@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.5
+
+- More accurate cost estimate: Codex turns on the priority (or flex) tier and long prompts are priced at their own rates, Claude fast mode at its 2x rate, US-only inference at 1.1x, and web searches at $10 per 1,000
+- Model prices refreshed from LiteLLM
+
 ## 1.3.4
 
 - Fix: clicking the menu bar icon while the panel is open closes it. In 1.3.3 the panel flickered and opened again
