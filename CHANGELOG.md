@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.4
+
+- Fix: clicking the menu bar icon while the panel is open closes it. In 1.3.3 the panel flickered and opened again
+- Right-clicking the icon while the panel is open closes the panel before showing the menu
+
 ## 1.3.3
 
 - Fix: the panel opens again when you click the menu bar icon. In 1.3.1 and 1.3.2 it opened with zero size and stayed invisible
