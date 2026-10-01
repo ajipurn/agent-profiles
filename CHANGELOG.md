@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2
+
+- Fix: clicking the menu bar icon opens the panel again. In 1.3.1 the panel closed itself the moment it opened
+
 ## 1.3.1
 
 - The panel is now its own rounded window under the menu bar icon, so it always fits its content (no more grey edges when data loads after opening)
