@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- The panel is now its own rounded window under the menu bar icon, so it always fits its content (no more grey edges when data loads after opening)
+- Click outside, click the icon again, or press Esc to close it
+
 ## 1.3.0
 
 - New panel in place of the menu, in the style of OpenUsage: provider tabs, a usage card per provider, accounts to switch to, and action buttons
