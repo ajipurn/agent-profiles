@@ -13,6 +13,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let claude: AppState
     private let codex: AppModel
     private let defaultTab: () -> MenuBarProvider
+    private let pickTab: (MenuBarProvider) -> Void
     private let openSettings: (SettingsPane) -> Void
     private let switchCodex: (String) -> Void
     private let tab = TabSelection()
@@ -21,11 +22,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     init(claude: AppState, codex: AppModel,
          defaultTab: @escaping () -> MenuBarProvider,
+         pickTab: @escaping (MenuBarProvider) -> Void,
          openSettings: @escaping (SettingsPane) -> Void,
          switchCodex: @escaping (String) -> Void) {
         self.claude = claude
         self.codex = codex
         self.defaultTab = defaultTab
+        self.pickTab = pickTab
         self.openSettings = openSettings
         self.switchCodex = switchCodex
         super.init()
@@ -57,7 +60,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         guard provider != tab.selected else { return }
         tab.selected = provider
         // The menu bar icon (and Settings' "Show usage for") follows the tab.
-        Preferences.menuBarProvider = provider
+        pickTab(provider)
         // Keep the switcher row (it is handling this click); replace the rest.
         while menu.numberOfItems > 1 { menu.removeItem(at: 1) }
         addBody()

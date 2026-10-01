@@ -22,7 +22,8 @@ struct AgentProfilesApp: App {
 
 /// Owns the status item and its menu (CodexBar-style) for both providers:
 /// Claude (Desktop and CLI profiles, from Claude Profiles) and Codex (from
-/// Codex Profiles). The icon follows the provider picked in Settings.
+/// Codex Profiles). The icon follows the provider picked in Settings, or the
+/// frontmost Claude/Codex app when that is turned on.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// `--demo`: sample accounts in throwaway directories. Nothing touches the
@@ -46,6 +47,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pendingCodexSwitch: String?
     /// Codex session windows already alerted about (account + reset time).
     private var codexLowNotified: Set<String> = []
+    /// Provider of the last Claude or Codex app brought to the front; other
+    /// apps leave it alone so the icon doesn't flip back and forth.
+    private var activeAppProvider: MenuBarProvider?
+    /// Picking a provider (menu tab or Settings) overrides the detected app
+    /// until the next Claude/Codex activation.
+    private var lastPickedProvider: MenuBarProvider?
+
+    /// What the status item and the menu's opening tab show.
+    private var displayedProvider: MenuBarProvider {
+        (Preferences.followActiveApp ? activeAppProvider : nil) ?? Preferences.menuBarProvider ?? .claude
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -93,13 +105,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         menuController = StatusMenuController(
             claude: state, codex: codex,
-            defaultTab: { Preferences.menuBarProvider ?? .claude },
+            defaultTab: { [weak self] in self?.displayedProvider ?? .claude },
+            pickTab: { [weak self] provider in
+                // Also overrides the detected app, even if the preference
+                // already matched.
+                self?.activeAppProvider = nil
+                Preferences.menuBarProvider = provider
+                self?.updateStatusItem()
+            },
             openSettings: { [weak self] pane in self?.showSettings(pane) },
             switchCodex: { [weak self] id in self?.switchCodex(id) })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "dev.aji.AgentProfiles.status"
         statusItem.menu = menuController.menu
         statusItem.button?.imagePosition = .imageLeading
+        lastPickedProvider = Preferences.menuBarProvider
+        activeAppProvider = MenuBarProvider(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
         updateStatusItem()
 
         cancellables.append(state.objectWillChange
@@ -111,7 +132,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         cancellables.append(NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.updateStatusItem() }
+            Task { @MainActor in
+                guard let self else { return }
+                if Preferences.menuBarProvider != self.lastPickedProvider {
+                    self.lastPickedProvider = Preferences.menuBarProvider
+                    self.activeAppProvider = nil
+                }
+                self.updateStatusItem()
+            }
+        })
+        cancellables.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard let provider = MenuBarProvider(frontmostBundleID: app?.bundleIdentifier) else { return }
+            Task { @MainActor in
+                guard let self, self.activeAppProvider != provider else { return }
+                self.activeAppProvider = provider
+                self.updateStatusItem()
+            }
         })
         observeCodex()
 
@@ -284,7 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.toolTip = "Switching accounts…"
             return
         }
-        let card = (Preferences.menuBarProvider ?? .claude) == .claude ? state.cardModel : codex.cardModel
+        let card = displayedProvider == .claude ? state.cardModel : codex.cardModel
         let session = card.sessionRemaining
         let weekly = card.weeklyRemaining
         button.image = UsageIcon.image(session: session, weekly: weekly,

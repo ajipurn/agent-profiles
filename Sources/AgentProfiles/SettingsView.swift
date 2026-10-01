@@ -95,6 +95,7 @@ struct GeneralSettingsView: View {
     @ObservedObject var updates: UpdateController
     @AppStorage(Preferences.menuBarProviderKey) private var provider: MenuBarProvider = .claude
     @AppStorage(Preferences.showPercentKey) private var showPercent = true
+    @AppStorage(Preferences.followActiveAppKey) private var followActiveApp = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -104,11 +105,12 @@ struct GeneralSettingsView: View {
                     ForEach(MenuBarProvider.allCases) { Text($0.style.name).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Follow the active app", isOn: $followActiveApp)
                 Toggle("Show percentage next to the icon", isOn: $showPercent)
             } header: {
                 Text("Menu Bar")
             } footer: {
-                Text("The icon's top bar is the session window, the bottom bar the weekly one. The menu shows both providers.")
+                Text("The icon's top bar is the session window, the bottom bar the weekly one. The menu shows both providers. When following the active app, bringing Claude or Codex to the front switches the icon to it; other apps, including terminals, keep the last one.")
                     .foregroundStyle(.secondary)
             }
             Section("Startup") {
