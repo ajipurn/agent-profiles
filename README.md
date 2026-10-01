@@ -84,7 +84,7 @@ The panel follows [OpenUsage](https://github.com/robinebers/openusage)'s design:
 
 Everything both old apps did is still there.
 
-The app icon, a dial with two gauge arcs chasing each other in Claude's orange and Codex's teal,
+The app icon, a dial with two gauge arcs chasing each other in Claude's orange and Codex's blue,
 is drawn in code: `swift scripts/make-icon.swift` regenerates
 `Resources/AppIcon.icns` and `docs/icon.png`.
 
