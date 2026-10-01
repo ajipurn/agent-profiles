@@ -72,7 +72,9 @@ The panel follows [OpenUsage](https://github.com/robinebers/openusage)'s design:
 - **Cost:** read from local Claude Code (`~/.claude/projects`, and each CLI
   profile) and Codex (`~/.codex/sessions`) logs and priced at API list rates
   from a bundled [LiteLLM](https://github.com/BerriAI/litellm) snapshot
-  (`python3 scripts/update-pricing.py` refreshes it). It is an estimate:
+  (`python3 scripts/update-pricing.py` refreshes it), including Codex's
+  priority and flex tiers, long-context rates, Claude's fast mode, US-only
+  inference and web searches. It is an estimate:
   Claude Desktop chats keep no local token log, and on a subscription it is
   the value of what you used, not a bill. Nothing leaves your Mac.
 - **Settings window:** General (menu bar, launch at login, updates), Claude

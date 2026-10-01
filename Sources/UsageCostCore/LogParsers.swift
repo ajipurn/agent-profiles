@@ -17,11 +17,17 @@ public enum LogParsers {
                 var ephemeral_5m_input_tokens: Int?
                 var ephemeral_1h_input_tokens: Int?
             }
+            struct ServerTools: Decodable {
+                var web_search_requests: Int?
+            }
             var input_tokens: Int?
             var output_tokens: Int?
             var cache_creation_input_tokens: Int?
             var cache_read_input_tokens: Int?
             var cache_creation: CacheCreation?
+            var server_tool_use: ServerTools?
+            var speed: String?
+            var inference_geo: String?
         }
         var timestamp: String?
         var requestId: String?
@@ -47,8 +53,11 @@ public enum LogParsers {
                 cacheWrite1h: oneHour)
             guard !tokens.isEmpty else { return }
             let key = message.id.map { id in "claude:\(id):\(parsed.requestId ?? "")" }
-            entries.append(UsageEntry(day: Day(date, calendar: calendar), provider: .claude,
-                                      model: model, tokens: tokens, dedupeKey: key))
+            entries.append(UsageEntry(
+                day: Day(date, calendar: calendar), provider: .claude, model: model, tokens: tokens, dedupeKey: key,
+                tier: usage.speed == "fast" ? .fast : .standard,
+                multiplier: usage.inference_geo == "us" ? Pricing.usInferenceMultiplier : 1,
+                webSearches: usage.server_tool_use?.web_search_requests ?? 0))
         }
         return entries
     }
@@ -61,8 +70,12 @@ public enum LogParsers {
                 var total_token_usage: Counts?
                 var last_token_usage: Counts?
             }
+            struct ThreadSettings: Decodable {
+                var service_tier: String?
+            }
             var type: String?
             var info: Info?
+            var thread_settings: ThreadSettings?
         }
         var timestamp: String?
         var type: String?
@@ -99,21 +112,29 @@ public enum LogParsers {
     /// Token deltas from one `~/.codex/sessions/**/rollout-*.jsonl`. Totals
     /// are cumulative, so each event counts what grew since the last one; the
     /// first event of a file uses its own last-turn figure, since a resumed
-    /// session carries the earlier totals over.
+    /// session carries the earlier totals over. The service tier set by the
+    /// latest thread settings (priority costs more) applies to the turns
+    /// after it.
     public static func codex(_ data: Data, calendar: Calendar = .current) -> [UsageEntry] {
         let decoder = JSONDecoder()
         var entries: [UsageEntry] = []
         var model = "gpt-5"
+        var tier = PriceTier.standard
         var previous: Counts?
         // Codex writes the event type within a line's first ~150 bytes, so
         // only line heads are searched; the rest of a 2 GB month is skipped.
-        forEachLine(in: data, headContainsAny: [#""type":"turn_context""#, #""token_count""#]) { line in
+        forEachLine(in: data, headContainsAny: [#""type":"turn_context""#, #""token_count""#,
+                                                #""thread_settings_applied""#]) { line in
             // Turn contexts carry the whole system prompt; read just the model.
             if line.range(of: Data(#""type":"turn_context""#.utf8)) != nil {
                 if let name = firstString(after: #""model":""#, in: line), !name.isEmpty { model = name }
                 return
             }
             guard let parsed = try? decoder.decode(CodexLine.self, from: line), let payload = parsed.payload else { return }
+            if payload.type == "thread_settings_applied" {
+                tier = Self.codexTier(payload.thread_settings?.service_tier)
+                return
+            }
             guard payload.type == "token_count", let info = payload.info,
                   let date = parsed.timestamp.flatMap(Timestamps.parse) else { return }
             let delta: Counts?
@@ -129,7 +150,8 @@ public enum LogParsers {
             }
             guard let tokens = delta?.usage, !tokens.isEmpty else { return }
             entries.append(UsageEntry(day: Day(date, calendar: calendar), provider: .codex,
-                                      model: model, tokens: tokens, dedupeKey: nil))
+                                      model: model, tokens: tokens, dedupeKey: nil, tier: tier,
+                                      promptTokens: info.last_token_usage?.input_tokens))
         }
         return entries
     }
@@ -140,6 +162,14 @@ public enum LogParsers {
         guard let start = line.range(of: Data(prefix.utf8))?.upperBound,
               let end = line[start...].firstIndex(of: UInt8(ascii: "\"")) else { return nil }
         return String(decoding: line[start..<end], as: UTF8.self)
+    }
+
+    static func codexTier(_ value: String?) -> PriceTier {
+        switch value {
+        case "priority", "fast": .priority
+        case "flex": .flex
+        default: .standard
+        }
     }
 
     // MARK: Lines

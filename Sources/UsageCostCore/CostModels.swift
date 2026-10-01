@@ -46,6 +46,14 @@ public struct UsageEntry: Equatable, Sendable {
     /// Identifies a request logged more than once (Claude Code repeats a
     /// message per content block and copies history into resumed sessions).
     public var dedupeKey: String?
+    public var tier: PriceTier = .standard
+    /// The request's whole prompt, when the log reports it apart from the
+    /// billed tokens (Codex); decides long-context rates.
+    public var promptTokens: Int?
+    /// Scales the whole request (Anthropic's US-only inference is 1.1x).
+    public var multiplier: Double = 1
+    /// Anthropic server-side web searches, billed per search.
+    public var webSearches = 0
 }
 
 public enum CostPeriod: String, CaseIterable, Sendable {
@@ -122,7 +130,8 @@ public struct CostSummary: Equatable, Sendable {
                 summary.unpricedModels.insert(entry.model)
                 continue
             }
-            let dollars = modelPrice.cost(of: entry.tokens)
+            let dollars = modelPrice.cost(of: entry.tokens, tier: entry.tier, promptTokens: entry.promptTokens)
+                * entry.multiplier + Double(entry.webSearches) * Pricing.webSearchCost
             for period in CostPeriod.allCases
             where period.contains(entry.day, today: today, yesterday: yesterday, monthStart: monthStart) {
                 summary.amounts[period, default: [:]][entry.provider, default: CostAmount()].dollars += dollars

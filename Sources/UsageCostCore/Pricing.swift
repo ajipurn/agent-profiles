@@ -1,7 +1,7 @@
 import Foundation
 
-/// API list prices for one model, USD per token.
-public struct ModelPrice: Equatable, Sendable {
+/// One set of per-token rates (USD).
+public struct Rates: Equatable, Sendable {
     public var input: Double
     public var output: Double
     public var cacheRead: Double?
@@ -9,34 +9,19 @@ public struct ModelPrice: Equatable, Sendable {
     public var cacheWrite: Double?
     /// Anthropic's 1-hour cache writes.
     public var cacheWrite1h: Double?
-    // Long-context rates, charged when a request's prompt passes 200k tokens.
-    public var inputAbove200k: Double?
-    public var outputAbove200k: Double?
-    public var cacheReadAbove200k: Double?
-    public var cacheWriteAbove200k: Double?
 
     public init(input: Double, output: Double, cacheRead: Double? = nil, cacheWrite: Double? = nil,
-                cacheWrite1h: Double? = nil, inputAbove200k: Double? = nil, outputAbove200k: Double? = nil,
-                cacheReadAbove200k: Double? = nil, cacheWriteAbove200k: Double? = nil) {
+                cacheWrite1h: Double? = nil) {
         self.input = input
         self.output = output
         self.cacheRead = cacheRead
         self.cacheWrite = cacheWrite
         self.cacheWrite1h = cacheWrite1h
-        self.inputAbove200k = inputAbove200k
-        self.outputAbove200k = outputAbove200k
-        self.cacheReadAbove200k = cacheReadAbove200k
-        self.cacheWriteAbove200k = cacheWriteAbove200k
     }
 
-    /// Dollars for one request's tokens.
-    public func cost(of usage: TokenUsage) -> Double {
-        let prompt = usage.input + usage.cacheWrite5m + usage.cacheWrite1h + usage.cacheRead
-        let long = prompt > 200_000
-        let input = long ? inputAbove200k ?? self.input : self.input
-        let output = long ? outputAbove200k ?? self.output : self.output
-        let read = (long ? cacheReadAbove200k : nil) ?? cacheRead ?? input
-        let write = (long ? cacheWriteAbove200k : nil) ?? cacheWrite ?? input
+    func cost(of usage: TokenUsage) -> Double {
+        let read = cacheRead ?? input
+        let write = cacheWrite ?? input
         // Anthropic bills 1-hour writes at twice the input rate.
         let write1h = cacheWrite1h ?? (cacheWrite == nil ? input : input * 2)
         return Double(usage.input) * input
@@ -47,7 +32,73 @@ public struct ModelPrice: Equatable, Sendable {
     }
 }
 
+/// How a request was served, which changes its price.
+public enum PriceTier: Equatable, Sendable {
+    case standard
+    /// OpenAI's priority processing (Codex "priority"/"fast").
+    case priority
+    /// OpenAI's flex processing.
+    case flex
+    /// Anthropic's fast mode.
+    case fast
+}
+
+/// API list prices for one model.
+public struct ModelPrice: Equatable, Sendable {
+    public var standard: Rates
+    /// Rates once a request's prompt passes `longContextThreshold` tokens.
+    public var longContext: Rates?
+    public var longContextThreshold: Int?
+    public var priority: Rates?
+    public var priorityLongContext: Rates?
+    public var flex: Rates?
+    public var flexLongContext: Rates?
+    /// Fast mode scales every token kind by this; nil: not offered.
+    public var fastMultiplier: Double?
+
+    public init(standard: Rates, longContext: Rates? = nil, longContextThreshold: Int? = nil,
+                priority: Rates? = nil, priorityLongContext: Rates? = nil,
+                flex: Rates? = nil, flexLongContext: Rates? = nil, fastMultiplier: Double? = nil) {
+        self.standard = standard
+        self.longContext = longContext
+        self.longContextThreshold = longContextThreshold
+        self.priority = priority
+        self.priorityLongContext = priorityLongContext
+        self.flex = flex
+        self.flexLongContext = flexLongContext
+        self.fastMultiplier = fastMultiplier
+    }
+
+    /// Standard rates only.
+    public init(input: Double, output: Double, cacheRead: Double? = nil, cacheWrite: Double? = nil,
+                cacheWrite1h: Double? = nil) {
+        self.init(standard: Rates(input: input, output: output, cacheRead: cacheRead,
+                                  cacheWrite: cacheWrite, cacheWrite1h: cacheWrite1h))
+    }
+
+    /// Dollars for one request's tokens. `promptTokens` is the request's
+    /// whole prompt when the log says so (Codex); otherwise it is the sum of
+    /// the prompt-side tokens.
+    public func cost(of usage: TokenUsage, tier: PriceTier = .standard, promptTokens: Int? = nil) -> Double {
+        let prompt = promptTokens ?? (usage.input + usage.cacheRead + usage.cacheWrite5m + usage.cacheWrite1h)
+        let long = longContextThreshold.map { prompt > $0 } ?? false
+        let longRates = long ? longContext : nil
+        let rates: Rates = switch tier {
+        case .priority: (long ? priorityLongContext : nil) ?? priority ?? longRates ?? standard
+        case .flex: (long ? flexLongContext : nil) ?? flex ?? longRates ?? standard
+        case .standard, .fast: longRates ?? standard
+        }
+        let cost = rates.cost(of: usage)
+        return tier == .fast ? cost * (fastMultiplier ?? 1) : cost
+    }
+}
+
 public enum Pricing {
+    /// Anthropic's web search tool: $10 per 1,000 searches.
+    public static let webSearchCost = 0.01
+    /// Anthropic's US-only inference (`inference_geo: "us"`).
+    public static let usInferenceMultiplier = 1.1
+
     /// The catalog entry for a logged model name, tolerating provider
     /// prefixes, date suffixes and context-size tags.
     public static func price(for model: String, in catalog: [String: ModelPrice] = catalog) -> ModelPrice? {

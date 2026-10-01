@@ -4,142 +4,419 @@
 extension Pricing {
     /// USD per token, keyed by model name.
     public static let catalog: [String: ModelPrice] = [
-        "claude-fable-5": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05),
-        "claude-fable-5-1": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 2.5e-07, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05),
-        "claude-haiku-4-5": ModelPrice(input: 1e-06, output: 5e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06, cacheWrite1h: 2e-06),
-        "claude-haiku-4-5-20251001": ModelPrice(input: 1e-06, output: 5e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06, cacheWrite1h: 2e-06),
-        "claude-mythos-5": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05),
-        "claude-mythos-5-1": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 2.5e-07, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05),
-        "claude-mythos-preview": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05),
-        "claude-opus-4-5": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-5-20251101": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-6": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-6-20260205": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-7": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-7-20260416": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-4-8": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-5": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
-        "claude-opus-5-5": ModelPrice(input: 4e-06, output: 2e-05, cacheRead: 2e-07, cacheWrite: 5e-06, cacheWrite1h: 8e-06),
-        "claude-sonnet-4-5": ModelPrice(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06, inputAbove200k: 6e-06, outputAbove200k: 2.25e-05, cacheReadAbove200k: 6e-07, cacheWriteAbove200k: 7.5e-06),
-        "claude-sonnet-4-5-20250929": ModelPrice(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06, inputAbove200k: 6e-06, outputAbove200k: 2.25e-05, cacheReadAbove200k: 6e-07, cacheWriteAbove200k: 7.5e-06),
-        "claude-sonnet-4-6": ModelPrice(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06),
-        "claude-sonnet-5": ModelPrice(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06, cacheWrite1h: 4e-06),
-        "claude-sonnet-5-5": ModelPrice(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06, cacheWrite1h: 4e-06),
-        "gpt-3.5-turbo": ModelPrice(input: 5e-07, output: 1.5e-06),
-        "gpt-3.5-turbo-0125": ModelPrice(input: 5e-07, output: 1.5e-06),
-        "gpt-3.5-turbo-1106": ModelPrice(input: 1e-06, output: 2e-06),
-        "gpt-3.5-turbo-16k": ModelPrice(input: 3e-06, output: 4e-06),
-        "gpt-4": ModelPrice(input: 3e-05, output: 6e-05),
-        "gpt-4-0613": ModelPrice(input: 3e-05, output: 6e-05),
-        "gpt-4-1106-preview": ModelPrice(input: 1e-05, output: 3e-05),
-        "gpt-4-turbo": ModelPrice(input: 1e-05, output: 3e-05),
-        "gpt-4-turbo-2024-04-09": ModelPrice(input: 1e-05, output: 3e-05),
-        "gpt-4.1": ModelPrice(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
-        "gpt-4.1-2025-04-14": ModelPrice(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
-        "gpt-4.1-mini": ModelPrice(input: 4e-07, output: 1.6e-06, cacheRead: 1e-07),
-        "gpt-4.1-mini-2025-04-14": ModelPrice(input: 4e-07, output: 1.6e-06, cacheRead: 1e-07),
-        "gpt-4.1-nano": ModelPrice(input: 1e-07, output: 4e-07, cacheRead: 2.5e-08),
-        "gpt-4.1-nano-2025-04-14": ModelPrice(input: 1e-07, output: 4e-07, cacheRead: 2.5e-08),
-        "gpt-4o": ModelPrice(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-4o-2024-05-13": ModelPrice(input: 5e-06, output: 1.5e-05),
-        "gpt-4o-2024-08-06": ModelPrice(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-4o-2024-11-20": ModelPrice(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-4o-audio-preview-2024-12-17": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-4o-audio-preview-2025-06-03": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-4o-mini": ModelPrice(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08),
-        "gpt-4o-mini-2024-07-18": ModelPrice(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08),
-        "gpt-4o-mini-audio-preview-2024-12-17": ModelPrice(input: 1.5e-07, output: 6e-07),
-        "gpt-4o-mini-realtime-preview-2024-12-17": ModelPrice(input: 6e-07, output: 2.4e-06, cacheRead: 3e-07),
-        "gpt-4o-mini-search-preview": ModelPrice(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08),
-        "gpt-4o-mini-transcribe": ModelPrice(input: 1.25e-06, output: 5e-06),
-        "gpt-4o-mini-transcribe-2025-03-20": ModelPrice(input: 1.25e-06, output: 5e-06),
-        "gpt-4o-mini-transcribe-2025-12-15": ModelPrice(input: 1.25e-06, output: 5e-06),
-        "gpt-4o-mini-tts": ModelPrice(input: 6e-07, output: 1e-05),
-        "gpt-4o-mini-tts-2025-03-20": ModelPrice(input: 6e-07, output: 1e-05),
-        "gpt-4o-mini-tts-2025-12-15": ModelPrice(input: 6e-07, output: 1e-05),
-        "gpt-4o-search-preview": ModelPrice(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-4o-transcribe": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-4o-transcribe-diarize": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-5": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-2025-08-07": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-chat": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-chat-latest": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-codex": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-mini": ModelPrice(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08),
-        "gpt-5-mini-2025-08-07": ModelPrice(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08),
-        "gpt-5-nano": ModelPrice(input: 5e-08, output: 4e-07, cacheRead: 5e-09),
-        "gpt-5-nano-2025-08-07": ModelPrice(input: 5e-08, output: 4e-07, cacheRead: 5e-09),
-        "gpt-5-pro": ModelPrice(input: 1.5e-05, output: 0.00012),
-        "gpt-5-pro-2025-10-06": ModelPrice(input: 1.5e-05, output: 0.00012),
-        "gpt-5-search-api": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5-search-api-2025-10-14": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1-2025-11-13": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1-chat-latest": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1-codex": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1-codex-max": ModelPrice(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
-        "gpt-5.1-codex-mini": ModelPrice(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08),
-        "gpt-5.2": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.2-2025-12-11": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.2-chat-latest": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.2-codex": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.2-pro": ModelPrice(input: 2.1e-05, output: 0.000168),
-        "gpt-5.2-pro-2025-12-11": ModelPrice(input: 2.1e-05, output: 0.000168),
-        "gpt-5.3-chat-latest": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.3-codex": ModelPrice(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
-        "gpt-5.4": ModelPrice(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
-        "gpt-5.4-2026-03-05": ModelPrice(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
-        "gpt-5.4-mini": ModelPrice(input: 7.5e-07, output: 4.5e-06, cacheRead: 7.5e-08),
-        "gpt-5.4-mini-2026-03-17": ModelPrice(input: 7.5e-07, output: 4.5e-06, cacheRead: 7.5e-08),
-        "gpt-5.4-nano": ModelPrice(input: 2e-07, output: 1.25e-06, cacheRead: 2e-08),
-        "gpt-5.4-nano-2026-03-17": ModelPrice(input: 2e-07, output: 1.25e-06, cacheRead: 2e-08),
-        "gpt-5.4-pro": ModelPrice(input: 3e-05, output: 0.00018),
-        "gpt-5.4-pro-2026-03-05": ModelPrice(input: 3e-05, output: 0.00018),
-        "gpt-5.5": ModelPrice(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
-        "gpt-5.5-2026-04-23": ModelPrice(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
-        "gpt-5.5-cyber": ModelPrice(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06),
-        "gpt-5.5-pro": ModelPrice(input: 3e-05, output: 0.00018),
-        "gpt-5.5-pro-2026-04-23": ModelPrice(input: 3e-05, output: 0.00018),
-        "gpt-5.6": ModelPrice(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
-        "gpt-5.6-cyber": ModelPrice(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06, cacheWrite: 1.5625e-05),
-        "gpt-5.6-luna": ModelPrice(input: 2e-07, output: 1.2e-06, cacheRead: 2e-08, cacheWrite: 2.5e-07),
-        "gpt-5.6-sol": ModelPrice(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
-        "gpt-5.6-terra": ModelPrice(input: 2e-06, output: 1.2e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
-        "gpt-6-astra": ModelPrice(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05),
-        "gpt-6-luna": ModelPrice(input: 1e-07, output: 5e-07, cacheRead: 1e-08, cacheWrite: 1.25e-07),
-        "gpt-6-sol": ModelPrice(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
-        "gpt-6.1-sol": ModelPrice(input: 2e-06, output: 1e-05, cacheRead: 1e-07, cacheWrite: 2.5e-06),
-        "gpt-audio": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-audio-1.5": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-audio-2025-08-28": ModelPrice(input: 2.5e-06, output: 1e-05),
-        "gpt-audio-mini": ModelPrice(input: 6e-07, output: 2.4e-06),
-        "gpt-audio-mini-2025-12-15": ModelPrice(input: 6e-07, output: 2.4e-06),
-        "gpt-daybreak-blue-latest": ModelPrice(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
-        "gpt-daybreak-red-latest": ModelPrice(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06, cacheWrite: 1.5625e-05),
-        "gpt-image-1.5": ModelPrice(input: 5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-image-1.5-2025-12-16": ModelPrice(input: 5e-06, output: 1e-05, cacheRead: 1.25e-06),
-        "gpt-realtime": ModelPrice(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07),
-        "gpt-realtime-1.5": ModelPrice(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07),
-        "gpt-realtime-2": ModelPrice(input: 4e-06, output: 2.4e-05, cacheRead: 4e-07),
-        "gpt-realtime-2.1": ModelPrice(input: 4e-06, output: 2.4e-05, cacheRead: 4e-07),
-        "gpt-realtime-2.1-mini": ModelPrice(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08),
-        "gpt-realtime-2025-08-28": ModelPrice(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07),
-        "gpt-realtime-mini": ModelPrice(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08),
-        "gpt-realtime-mini-2025-12-15": ModelPrice(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08),
-        "gpt-rosalind-research": ModelPrice(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07),
-        "o1": ModelPrice(input: 1.5e-05, output: 6e-05, cacheRead: 7.5e-06),
-        "o1-2024-12-17": ModelPrice(input: 1.5e-05, output: 6e-05, cacheRead: 7.5e-06),
-        "o1-pro": ModelPrice(input: 0.00015, output: 0.0006),
-        "o1-pro-2025-03-19": ModelPrice(input: 0.00015, output: 0.0006),
-        "o3": ModelPrice(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
-        "o3-2025-04-16": ModelPrice(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
-        "o3-deep-research": ModelPrice(input: 1e-05, output: 4e-05, cacheRead: 2.5e-06),
-        "o3-mini": ModelPrice(input: 1.1e-06, output: 4.4e-06, cacheRead: 5.5e-07),
-        "o3-mini-2025-01-31": ModelPrice(input: 1.1e-06, output: 4.4e-06, cacheRead: 5.5e-07),
-        "o3-pro": ModelPrice(input: 2e-05, output: 8e-05),
-        "o3-pro-2025-06-10": ModelPrice(input: 2e-05, output: 8e-05),
-        "o4-mini": ModelPrice(input: 1.1e-06, output: 4.4e-06, cacheRead: 2.75e-07),
-        "o4-mini-2025-04-16": ModelPrice(input: 1.1e-06, output: 4.4e-06, cacheRead: 2.75e-07),
-        "o4-mini-deep-research": ModelPrice(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+        "claude-fable-5": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05)),
+        "claude-fable-5-1": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 2.5e-07, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05)),
+        "claude-haiku-4-5": ModelPrice(
+            standard: Rates(input: 1e-06, output: 5e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06, cacheWrite1h: 2e-06)),
+        "claude-haiku-4-5-20251001": ModelPrice(
+            standard: Rates(input: 1e-06, output: 5e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06, cacheWrite1h: 2e-06)),
+        "claude-mythos-5": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05)),
+        "claude-mythos-5-1": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 2.5e-07, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05)),
+        "claude-mythos-preview": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05, cacheWrite1h: 2e-05)),
+        "claude-opus-4-5": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-5-20251101": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-6": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-6-20260205": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-7": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-7-20260416": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05)),
+        "claude-opus-4-8": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
+            fastMultiplier: 2.0),
+        "claude-opus-5": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06, cacheWrite1h: 1e-05),
+            fastMultiplier: 2.0),
+        "claude-opus-5-5": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2e-05, cacheRead: 2e-07, cacheWrite: 5e-06, cacheWrite1h: 8e-06),
+            fastMultiplier: 2.0),
+        "claude-sonnet-4-5": ModelPrice(
+            standard: Rates(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06),
+            longContext: Rates(input: 6e-06, output: 2.25e-05, cacheRead: 6e-07, cacheWrite: 7.5e-06, cacheWrite1h: 1.2e-05),
+            longContextThreshold: 200000),
+        "claude-sonnet-4-5-20250929": ModelPrice(
+            standard: Rates(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06),
+            longContext: Rates(input: 6e-06, output: 2.25e-05, cacheRead: 6e-07, cacheWrite: 7.5e-06, cacheWrite1h: 1.2e-05),
+            longContextThreshold: 200000),
+        "claude-sonnet-4-6": ModelPrice(
+            standard: Rates(input: 3e-06, output: 1.5e-05, cacheRead: 3e-07, cacheWrite: 3.75e-06, cacheWrite1h: 6e-06)),
+        "claude-sonnet-5": ModelPrice(
+            standard: Rates(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06, cacheWrite1h: 4e-06)),
+        "claude-sonnet-5-5": ModelPrice(
+            standard: Rates(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06, cacheWrite1h: 4e-06)),
+        "gpt-3.5-turbo": ModelPrice(
+            standard: Rates(input: 5e-07, output: 1.5e-06)),
+        "gpt-3.5-turbo-0125": ModelPrice(
+            standard: Rates(input: 5e-07, output: 1.5e-06)),
+        "gpt-3.5-turbo-1106": ModelPrice(
+            standard: Rates(input: 1e-06, output: 2e-06)),
+        "gpt-3.5-turbo-16k": ModelPrice(
+            standard: Rates(input: 3e-06, output: 4e-06)),
+        "gpt-4": ModelPrice(
+            standard: Rates(input: 3e-05, output: 6e-05)),
+        "gpt-4-0613": ModelPrice(
+            standard: Rates(input: 3e-05, output: 6e-05)),
+        "gpt-4-1106-preview": ModelPrice(
+            standard: Rates(input: 1e-05, output: 3e-05)),
+        "gpt-4-turbo": ModelPrice(
+            standard: Rates(input: 1e-05, output: 3e-05)),
+        "gpt-4-turbo-2024-04-09": ModelPrice(
+            standard: Rates(input: 1e-05, output: 3e-05)),
+        "gpt-4.1": ModelPrice(
+            standard: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            priority: Rates(input: 3.5e-06, output: 1.4e-05, cacheRead: 8.75e-07)),
+        "gpt-4.1-2025-04-14": ModelPrice(
+            standard: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            priority: Rates(input: 3.5e-06, output: 1.4e-05, cacheRead: 8.75e-07)),
+        "gpt-4.1-mini": ModelPrice(
+            standard: Rates(input: 4e-07, output: 1.6e-06, cacheRead: 1e-07),
+            priority: Rates(input: 7e-07, output: 2.8e-06, cacheRead: 1.75e-07)),
+        "gpt-4.1-mini-2025-04-14": ModelPrice(
+            standard: Rates(input: 4e-07, output: 1.6e-06, cacheRead: 1e-07),
+            priority: Rates(input: 7e-07, output: 2.8e-06, cacheRead: 1.75e-07)),
+        "gpt-4.1-nano": ModelPrice(
+            standard: Rates(input: 1e-07, output: 4e-07, cacheRead: 2.5e-08),
+            priority: Rates(input: 2e-07, output: 8e-07, cacheRead: 5e-08)),
+        "gpt-4.1-nano-2025-04-14": ModelPrice(
+            standard: Rates(input: 1e-07, output: 4e-07, cacheRead: 2.5e-08),
+            priority: Rates(input: 2e-07, output: 8e-07, cacheRead: 5e-08)),
+        "gpt-4o": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
+            priority: Rates(input: 4.25e-06, output: 1.7e-05, cacheRead: 2.125e-06)),
+        "gpt-4o-2024-05-13": ModelPrice(
+            standard: Rates(input: 5e-06, output: 1.5e-05),
+            priority: Rates(input: 8.75e-06, output: 2.625e-05)),
+        "gpt-4o-2024-08-06": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
+            priority: Rates(input: 4.25e-06, output: 1.7e-05, cacheRead: 2.125e-06)),
+        "gpt-4o-2024-11-20": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06),
+            priority: Rates(input: 4.25e-06, output: 1.7e-05, cacheRead: 2.125e-06)),
+        "gpt-4o-audio-preview-2024-12-17": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-4o-audio-preview-2025-06-03": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-4o-mini": ModelPrice(
+            standard: Rates(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08),
+            priority: Rates(input: 2.5e-07, output: 1e-06, cacheRead: 1.25e-07)),
+        "gpt-4o-mini-2024-07-18": ModelPrice(
+            standard: Rates(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08),
+            priority: Rates(input: 2.5e-07, output: 1e-06, cacheRead: 1.25e-07)),
+        "gpt-4o-mini-audio-preview-2024-12-17": ModelPrice(
+            standard: Rates(input: 1.5e-07, output: 6e-07)),
+        "gpt-4o-mini-realtime-preview-2024-12-17": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06, cacheRead: 3e-07)),
+        "gpt-4o-mini-search-preview": ModelPrice(
+            standard: Rates(input: 1.5e-07, output: 6e-07, cacheRead: 7.5e-08)),
+        "gpt-4o-mini-transcribe": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 5e-06)),
+        "gpt-4o-mini-transcribe-2025-03-20": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 5e-06)),
+        "gpt-4o-mini-transcribe-2025-12-15": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 5e-06)),
+        "gpt-4o-mini-tts": ModelPrice(
+            standard: Rates(input: 6e-07, output: 1e-05)),
+        "gpt-4o-mini-tts-2025-03-20": ModelPrice(
+            standard: Rates(input: 6e-07, output: 1e-05)),
+        "gpt-4o-mini-tts-2025-12-15": ModelPrice(
+            standard: Rates(input: 6e-07, output: 1e-05)),
+        "gpt-4o-search-preview": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05, cacheRead: 1.25e-06)),
+        "gpt-4o-transcribe": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-4o-transcribe-diarize": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-5": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
+            priority: Rates(input: 2.5e-06, output: 2e-05, cacheRead: 2.5e-07),
+            flex: Rates(input: 6.25e-07, output: 5e-06, cacheRead: 6.25e-08)),
+        "gpt-5-2025-08-07": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
+            priority: Rates(input: 2.5e-06, output: 2e-05, cacheRead: 2.5e-07),
+            flex: Rates(input: 6.25e-07, output: 5e-06, cacheRead: 6.25e-08)),
+        "gpt-5-chat": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5-chat-latest": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5-codex": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5-mini": ModelPrice(
+            standard: Rates(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08),
+            priority: Rates(input: 4.5e-07, output: 3.6e-06, cacheRead: 4.5e-08),
+            flex: Rates(input: 1.25e-07, output: 1e-06, cacheRead: 1.25e-08)),
+        "gpt-5-mini-2025-08-07": ModelPrice(
+            standard: Rates(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08),
+            priority: Rates(input: 4.5e-07, output: 3.6e-06, cacheRead: 4.5e-08),
+            flex: Rates(input: 1.25e-07, output: 1e-06, cacheRead: 1.25e-08)),
+        "gpt-5-nano": ModelPrice(
+            standard: Rates(input: 5e-08, output: 4e-07, cacheRead: 5e-09),
+            flex: Rates(input: 2.5e-08, output: 2e-07, cacheRead: 2.5e-09)),
+        "gpt-5-nano-2025-08-07": ModelPrice(
+            standard: Rates(input: 5e-08, output: 4e-07, cacheRead: 5e-09),
+            flex: Rates(input: 2.5e-08, output: 2e-07, cacheRead: 2.5e-09)),
+        "gpt-5-pro": ModelPrice(
+            standard: Rates(input: 1.5e-05, output: 0.00012)),
+        "gpt-5-pro-2025-10-06": ModelPrice(
+            standard: Rates(input: 1.5e-05, output: 0.00012)),
+        "gpt-5-search-api": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5-search-api-2025-10-14": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5.1": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
+            priority: Rates(input: 2.5e-06, output: 2e-05, cacheRead: 2.5e-07),
+            flex: Rates(input: 6.25e-07, output: 5e-06, cacheRead: 6.25e-08)),
+        "gpt-5.1-2025-11-13": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07),
+            priority: Rates(input: 2.5e-06, output: 2e-05, cacheRead: 2.5e-07),
+            flex: Rates(input: 6.25e-07, output: 5e-06, cacheRead: 6.25e-08)),
+        "gpt-5.1-chat-latest": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5.1-codex": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5.1-codex-max": ModelPrice(
+            standard: Rates(input: 1.25e-06, output: 1e-05, cacheRead: 1.25e-07)),
+        "gpt-5.1-codex-mini": ModelPrice(
+            standard: Rates(input: 2.5e-07, output: 2e-06, cacheRead: 2.5e-08)),
+        "gpt-5.2": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
+            priority: Rates(input: 3.5e-06, output: 2.8e-05, cacheRead: 3.5e-07),
+            flex: Rates(input: 8.75e-07, output: 7e-06, cacheRead: 8.75e-08)),
+        "gpt-5.2-2025-12-11": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
+            priority: Rates(input: 3.5e-06, output: 2.8e-05, cacheRead: 3.5e-07),
+            flex: Rates(input: 8.75e-07, output: 7e-06, cacheRead: 8.75e-08)),
+        "gpt-5.2-chat-latest": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07)),
+        "gpt-5.2-codex": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07)),
+        "gpt-5.2-pro": ModelPrice(
+            standard: Rates(input: 2.1e-05, output: 0.000168)),
+        "gpt-5.2-pro-2025-12-11": ModelPrice(
+            standard: Rates(input: 2.1e-05, output: 0.000168)),
+        "gpt-5.3-chat-latest": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07)),
+        "gpt-5.3-codex": ModelPrice(
+            standard: Rates(input: 1.75e-06, output: 1.4e-05, cacheRead: 1.75e-07),
+            priority: Rates(input: 3.5e-06, output: 2.8e-05, cacheRead: 3.5e-07)),
+        "gpt-5.4": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
+            longContext: Rates(input: 5e-06, output: 2.25e-05, cacheRead: 5e-07),
+            longContextThreshold: 272000,
+            priority: Rates(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
+            flex: Rates(input: 1.25e-06, output: 7.5e-06, cacheRead: 1.3e-07),
+            flexLongContext: Rates(input: 2.5e-06, output: 1.125e-05, cacheRead: 2.5e-07)),
+        "gpt-5.4-2026-03-05": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
+            longContext: Rates(input: 5e-06, output: 2.25e-05, cacheRead: 5e-07),
+            longContextThreshold: 272000,
+            priority: Rates(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
+            flex: Rates(input: 1.25e-06, output: 7.5e-06, cacheRead: 1.3e-07),
+            flexLongContext: Rates(input: 2.5e-06, output: 1.125e-05, cacheRead: 2.5e-07)),
+        "gpt-5.4-mini": ModelPrice(
+            standard: Rates(input: 7.5e-07, output: 4.5e-06, cacheRead: 7.5e-08),
+            priority: Rates(input: 1.5e-06, output: 9e-06, cacheRead: 1.5e-07),
+            flex: Rates(input: 3.75e-07, output: 2.25e-06, cacheRead: 3.75e-08)),
+        "gpt-5.4-mini-2026-03-17": ModelPrice(
+            standard: Rates(input: 7.5e-07, output: 4.5e-06, cacheRead: 7.5e-08),
+            priority: Rates(input: 1.5e-06, output: 9e-06, cacheRead: 1.5e-07),
+            flex: Rates(input: 3.75e-07, output: 2.25e-06, cacheRead: 3.75e-08)),
+        "gpt-5.4-nano": ModelPrice(
+            standard: Rates(input: 2e-07, output: 1.25e-06, cacheRead: 2e-08),
+            flex: Rates(input: 1e-07, output: 6.25e-07, cacheRead: 1e-08)),
+        "gpt-5.4-nano-2026-03-17": ModelPrice(
+            standard: Rates(input: 2e-07, output: 1.25e-06, cacheRead: 2e-08),
+            flex: Rates(input: 1e-07, output: 6.25e-07, cacheRead: 1e-08)),
+        "gpt-5.4-pro": ModelPrice(
+            standard: Rates(input: 3e-05, output: 0.00018),
+            longContext: Rates(input: 6e-05, output: 0.00027),
+            longContextThreshold: 272000,
+            flex: Rates(input: 1.5e-05, output: 9e-05),
+            flexLongContext: Rates(input: 3e-05, output: 0.000135)),
+        "gpt-5.4-pro-2026-03-05": ModelPrice(
+            standard: Rates(input: 3e-05, output: 0.00018),
+            longContext: Rates(input: 6e-05, output: 0.00027),
+            longContextThreshold: 272000,
+            flex: Rates(input: 1.5e-05, output: 9e-05),
+            flexLongContext: Rates(input: 3e-05, output: 0.000135)),
+        "gpt-5.5": ModelPrice(
+            standard: Rates(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
+            longContext: Rates(input: 1e-05, output: 4.5e-05, cacheRead: 1e-06),
+            longContextThreshold: 272000,
+            priority: Rates(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06),
+            flex: Rates(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
+            flexLongContext: Rates(input: 5e-06, output: 2.25e-05, cacheRead: 5e-07)),
+        "gpt-5.5-2026-04-23": ModelPrice(
+            standard: Rates(input: 5e-06, output: 3e-05, cacheRead: 5e-07),
+            longContext: Rates(input: 1e-05, output: 4.5e-05, cacheRead: 1e-06),
+            longContextThreshold: 272000,
+            priority: Rates(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06),
+            flex: Rates(input: 2.5e-06, output: 1.5e-05, cacheRead: 2.5e-07),
+            flexLongContext: Rates(input: 5e-06, output: 2.25e-05, cacheRead: 5e-07)),
+        "gpt-5.5-cyber": ModelPrice(
+            standard: Rates(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06)),
+        "gpt-5.5-pro": ModelPrice(
+            standard: Rates(input: 3e-05, output: 0.00018),
+            longContext: Rates(input: 6e-05, output: 0.00027),
+            longContextThreshold: 272000,
+            flex: Rates(input: 1.5e-05, output: 9e-05)),
+        "gpt-5.5-pro-2026-04-23": ModelPrice(
+            standard: Rates(input: 3e-05, output: 0.00018),
+            longContext: Rates(input: 6e-05, output: 0.00027),
+            longContextThreshold: 272000,
+            flex: Rates(input: 1.5e-05, output: 9e-05)),
+        "gpt-5.6": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            longContext: Rates(input: 8e-06, output: 3e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            longContextThreshold: 272000,
+            priority: Rates(input: 8e-06, output: 4e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            priorityLongContext: Rates(input: 1.6e-05, output: 6e-05, cacheRead: 1.6e-06, cacheWrite: 2e-05),
+            flex: Rates(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
+            flexLongContext: Rates(input: 4e-06, output: 1.5e-05, cacheRead: 4e-07, cacheWrite: 5e-06)),
+        "gpt-5.6-cyber": ModelPrice(
+            standard: Rates(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06, cacheWrite: 1.5625e-05),
+            longContext: Rates(input: 2.5e-05, output: 0.0001125, cacheRead: 2.5e-06, cacheWrite: 3.125e-05),
+            longContextThreshold: 272000),
+        "gpt-5.6-luna": ModelPrice(
+            standard: Rates(input: 2e-07, output: 1.2e-06, cacheRead: 2e-08, cacheWrite: 2.5e-07),
+            longContext: Rates(input: 4e-07, output: 1.8e-06, cacheRead: 4e-08, cacheWrite: 5e-07),
+            longContextThreshold: 272000,
+            priority: Rates(input: 4e-07, output: 2.4e-06, cacheRead: 4e-08, cacheWrite: 5e-07),
+            priorityLongContext: Rates(input: 8e-07, output: 3.6e-06, cacheRead: 8e-08, cacheWrite: 1e-06),
+            flex: Rates(input: 1e-07, output: 6e-07, cacheRead: 1e-08, cacheWrite: 1.25e-07),
+            flexLongContext: Rates(input: 2e-07, output: 9e-07, cacheRead: 2e-08, cacheWrite: 2.5e-07)),
+        "gpt-5.6-sol": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            longContext: Rates(input: 8e-06, output: 3e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            longContextThreshold: 272000,
+            priority: Rates(input: 8e-06, output: 4e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            priorityLongContext: Rates(input: 1.6e-05, output: 6e-05, cacheRead: 1.6e-06, cacheWrite: 2e-05),
+            flex: Rates(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
+            flexLongContext: Rates(input: 4e-06, output: 1.5e-05, cacheRead: 4e-07, cacheWrite: 5e-06)),
+        "gpt-5.6-terra": ModelPrice(
+            standard: Rates(input: 2e-06, output: 1.2e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
+            longContext: Rates(input: 4e-06, output: 1.8e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            longContextThreshold: 272000,
+            priority: Rates(input: 4e-06, output: 2.4e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            priorityLongContext: Rates(input: 8e-06, output: 3.6e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            flex: Rates(input: 1e-06, output: 6e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06),
+            flexLongContext: Rates(input: 2e-06, output: 9e-06, cacheRead: 2e-07, cacheWrite: 2.5e-06)),
+        "gpt-6-astra": ModelPrice(
+            standard: Rates(input: 1e-05, output: 5e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05),
+            longContext: Rates(input: 2e-05, output: 7.5e-05, cacheRead: 2e-06, cacheWrite: 2.5e-05),
+            longContextThreshold: 272000,
+            priority: Rates(input: 2e-05, output: 0.0001, cacheRead: 2e-06, cacheWrite: 2.5e-05),
+            priorityLongContext: Rates(input: 4e-05, output: 0.00015, cacheRead: 4e-06, cacheWrite: 5e-05),
+            flex: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07, cacheWrite: 6.25e-06),
+            flexLongContext: Rates(input: 1e-05, output: 3.75e-05, cacheRead: 1e-06, cacheWrite: 1.25e-05)),
+        "gpt-6-luna": ModelPrice(
+            standard: Rates(input: 1e-07, output: 5e-07, cacheRead: 1e-08, cacheWrite: 1.25e-07),
+            longContext: Rates(input: 2e-07, output: 7.5e-07, cacheRead: 2e-08, cacheWrite: 2.5e-07),
+            longContextThreshold: 272000,
+            priority: Rates(input: 2e-07, output: 1e-06, cacheRead: 2e-08, cacheWrite: 2.5e-07),
+            priorityLongContext: Rates(input: 4e-07, output: 1.5e-06, cacheRead: 4e-08, cacheWrite: 5e-07),
+            flex: Rates(input: 5e-08, output: 2.5e-07, cacheRead: 5e-09, cacheWrite: 6.25e-08),
+            flexLongContext: Rates(input: 1e-07, output: 3.75e-07, cacheRead: 1e-08, cacheWrite: 1.25e-07)),
+        "gpt-6-sol": ModelPrice(
+            standard: Rates(input: 2e-06, output: 1e-05, cacheRead: 2e-07, cacheWrite: 2.5e-06),
+            longContext: Rates(input: 4e-06, output: 1.5e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            longContextThreshold: 272000,
+            priority: Rates(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            priorityLongContext: Rates(input: 8e-06, output: 3e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            flex: Rates(input: 1e-06, output: 5e-06, cacheRead: 1e-07, cacheWrite: 1.25e-06),
+            flexLongContext: Rates(input: 2e-06, output: 7.5e-06, cacheRead: 2e-07, cacheWrite: 2.5e-06)),
+        "gpt-6.1-sol": ModelPrice(
+            standard: Rates(input: 2e-06, output: 1e-05, cacheRead: 1e-07, cacheWrite: 2.5e-06),
+            longContext: Rates(input: 4e-06, output: 1.5e-05, cacheRead: 2e-07, cacheWrite: 5e-06),
+            longContextThreshold: 272000,
+            priority: Rates(input: 4e-06, output: 2e-05, cacheRead: 2e-07, cacheWrite: 5e-06),
+            priorityLongContext: Rates(input: 8e-06, output: 3e-05, cacheRead: 4e-07, cacheWrite: 1e-05),
+            flex: Rates(input: 1e-06, output: 5e-06, cacheRead: 5e-08, cacheWrite: 1.25e-06),
+            flexLongContext: Rates(input: 2e-06, output: 7.5e-06, cacheRead: 1e-07, cacheWrite: 2.5e-06)),
+        "gpt-audio": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-audio-1.5": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-audio-2025-08-28": ModelPrice(
+            standard: Rates(input: 2.5e-06, output: 1e-05)),
+        "gpt-audio-mini": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06)),
+        "gpt-audio-mini-2025-12-15": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06)),
+        "gpt-daybreak-blue-latest": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2e-05, cacheRead: 4e-07, cacheWrite: 5e-06),
+            longContext: Rates(input: 8e-06, output: 3e-05, cacheRead: 8e-07, cacheWrite: 1e-05),
+            longContextThreshold: 272000),
+        "gpt-daybreak-red-latest": ModelPrice(
+            standard: Rates(input: 1.25e-05, output: 7.5e-05, cacheRead: 1.25e-06, cacheWrite: 1.5625e-05),
+            longContext: Rates(input: 2.5e-05, output: 0.0001125, cacheRead: 2.5e-06, cacheWrite: 3.125e-05),
+            longContextThreshold: 272000),
+        "gpt-image-1.5": ModelPrice(
+            standard: Rates(input: 5e-06, output: 1e-05, cacheRead: 1.25e-06)),
+        "gpt-image-1.5-2025-12-16": ModelPrice(
+            standard: Rates(input: 5e-06, output: 1e-05, cacheRead: 1.25e-06)),
+        "gpt-realtime": ModelPrice(
+            standard: Rates(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07)),
+        "gpt-realtime-1.5": ModelPrice(
+            standard: Rates(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07)),
+        "gpt-realtime-2": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2.4e-05, cacheRead: 4e-07)),
+        "gpt-realtime-2.1": ModelPrice(
+            standard: Rates(input: 4e-06, output: 2.4e-05, cacheRead: 4e-07)),
+        "gpt-realtime-2.1-mini": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08)),
+        "gpt-realtime-2025-08-28": ModelPrice(
+            standard: Rates(input: 4e-06, output: 1.6e-05, cacheRead: 4e-07)),
+        "gpt-realtime-mini": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08)),
+        "gpt-realtime-mini-2025-12-15": ModelPrice(
+            standard: Rates(input: 6e-07, output: 2.4e-06, cacheRead: 6e-08)),
+        "gpt-rosalind-research": ModelPrice(
+            standard: Rates(input: 5e-06, output: 2.5e-05, cacheRead: 5e-07)),
+        "o1": ModelPrice(
+            standard: Rates(input: 1.5e-05, output: 6e-05, cacheRead: 7.5e-06)),
+        "o1-2024-12-17": ModelPrice(
+            standard: Rates(input: 1.5e-05, output: 6e-05, cacheRead: 7.5e-06)),
+        "o1-pro": ModelPrice(
+            standard: Rates(input: 0.00015, output: 0.0006)),
+        "o1-pro-2025-03-19": ModelPrice(
+            standard: Rates(input: 0.00015, output: 0.0006)),
+        "o3": ModelPrice(
+            standard: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            priority: Rates(input: 3.5e-06, output: 1.4e-05, cacheRead: 8.75e-07),
+            flex: Rates(input: 1e-06, output: 4e-06, cacheRead: 2.5e-07)),
+        "o3-2025-04-16": ModelPrice(
+            standard: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            priority: Rates(input: 3.5e-06, output: 1.4e-05, cacheRead: 8.75e-07),
+            flex: Rates(input: 1e-06, output: 4e-06, cacheRead: 2.5e-07)),
+        "o3-deep-research": ModelPrice(
+            standard: Rates(input: 1e-05, output: 4e-05, cacheRead: 2.5e-06)),
+        "o3-mini": ModelPrice(
+            standard: Rates(input: 1.1e-06, output: 4.4e-06, cacheRead: 5.5e-07)),
+        "o3-mini-2025-01-31": ModelPrice(
+            standard: Rates(input: 1.1e-06, output: 4.4e-06, cacheRead: 5.5e-07)),
+        "o3-pro": ModelPrice(
+            standard: Rates(input: 2e-05, output: 8e-05)),
+        "o3-pro-2025-06-10": ModelPrice(
+            standard: Rates(input: 2e-05, output: 8e-05)),
+        "o4-mini": ModelPrice(
+            standard: Rates(input: 1.1e-06, output: 4.4e-06, cacheRead: 2.75e-07),
+            priority: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            flex: Rates(input: 5.5e-07, output: 2.2e-06, cacheRead: 1.38e-07)),
+        "o4-mini-2025-04-16": ModelPrice(
+            standard: Rates(input: 1.1e-06, output: 4.4e-06, cacheRead: 2.75e-07),
+            priority: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07),
+            flex: Rates(input: 5.5e-07, output: 2.2e-06, cacheRead: 1.38e-07)),
+        "o4-mini-deep-research": ModelPrice(
+            standard: Rates(input: 2e-06, output: 8e-06, cacheRead: 5e-07)),
     ]
 }
