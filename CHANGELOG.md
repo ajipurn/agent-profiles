@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- Fix: the panel opens again when you click the menu bar icon. In 1.3.1 and 1.3.2 it opened with zero size and stayed invisible
+- Right-click (or Control-click) the menu bar icon for Settings, Check for Updates and Quit, which work even if the panel doesn't
+
 ## 1.3.2
 
 - Fix: clicking the menu bar icon opens the panel again. In 1.3.1 the panel closed itself the moment it opened
