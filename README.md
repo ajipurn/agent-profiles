@@ -7,6 +7,8 @@ eye on their usage limits. It merges
 [Claude Profiles](https://github.com/ajipurn/claude-profiles) and
 [Codex Profiles](https://github.com/ajipurn/codex-profiles) into one app.
 
+<img src="docs/screenshot.png" width="340" alt="Agent Profiles panel: estimated cost ring for Claude and Codex, provider tabs, Session and Weekly usage bars with pace, accounts to switch to, and actions">
+
 Requires macOS 14 or later, on Apple Silicon or Intel.
 
 Independently developed. Not affiliated with or endorsed by Anthropic or OpenAI.
