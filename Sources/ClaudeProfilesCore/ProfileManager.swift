@@ -59,17 +59,15 @@ public final class ProfileManager: Sendable {
     // MARK: - Inspection
 
     public func claudeDirState() -> ClaudeDirState {
-        guard let type = itemType(claudeDir) else { return .missing }
-        switch type {
-        case .typeSymbolicLink:
-            let target = (try? DirectoryLink.destination(of: claudeDir))
-                .map { URL(fileURLWithPath: $0, relativeTo: claudeDir.deletingLastPathComponent()).standardizedFileURL }
+        if isSymlink(claudeDir) {
+            let target = try? DirectoryLink.destination(of: claudeDir)
             let valid = target.map { isRealDirectory($0) } ?? false
             return .symlink(target: target, valid: valid)
-        case .typeDirectory:
-            return .realDirectory
-        default:
-            return .otherFile
+        }
+        switch itemType(claudeDir) {
+        case nil: return .missing
+        case .typeDirectory?: return .realDirectory
+        default: return .otherFile
         }
     }
 
@@ -190,7 +188,7 @@ public final class ProfileManager: Sendable {
         guard activeProfile() != name else { throw ProfileError.profileIsActive(name) }
         let dir = profilesDir.appendingPathComponent(name)
         guard isRealDirectory(dir) else { throw ProfileError.profileNotFound(name) }
-        try fm.removeItem(at: dir) // shared trees are symlinks inside it — shared history survives
+        try DirectoryLink.removeTree(at: dir) // shared trees are symlinks inside it — shared history survives
     }
 
     /// Merge every profile's session trees into `_shared-sessions` and symlink them back.
@@ -219,7 +217,7 @@ public final class ProfileManager: Sendable {
                 if isSymlink(link) { continue }
                 if isRealDirectory(link) {
                     try merge(contentsOf: link, into: sharedTree)
-                    try fm.removeItem(at: link)
+                    try DirectoryLink.removeTree(at: link)
                 }
                 // Missing trees get linked too, so future sessions land in the shared tree.
                 try DirectoryLink.create(at: link, pointingTo: sharedTree)
@@ -261,12 +259,12 @@ public final class ProfileManager: Sendable {
                 let profileDir = profilesDir.appendingPathComponent(profile)
                 let link = profileDir.appendingPathComponent(tree)
                 guard isSymlink(link) else { continue }
-                try fm.removeItem(at: link)
+                try DirectoryLink.remove(at: link)
                 try fm.createDirectory(at: link, withIntermediateDirectories: true)
                 guard isRealDirectory(sharedTree), let account = accountID(of: profileDir) else { continue }
                 for org in orgIDs(of: profileDir) {
-                    let src = sharedTree.appendingPathComponent(account).appendingPathComponent(org)
-                        .resolvingSymlinksInPath()
+                    let src = DirectoryLink.resolvingLinks(
+                        sharedTree.appendingPathComponent(account).appendingPathComponent(org))
                     let dst = link.appendingPathComponent(account).appendingPathComponent(org)
                     guard isRealDirectory(src), !itemExists(dst) else { continue }
                     try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -274,7 +272,7 @@ public final class ProfileManager: Sendable {
                 }
             }
         }
-        try fm.removeItem(at: sharedDir)
+        try DirectoryLink.removeTree(at: sharedDir)
     }
 
     /// Copy every real (not-yet-symlinked) session tree to
@@ -337,7 +335,7 @@ public final class ProfileManager: Sendable {
         for name in profiles() {
             for tree in Self.sessionTrees {
                 let target = profilesDir.appendingPathComponent(name).appendingPathComponent(tree)
-                if itemExists(target) { try fm.removeItem(at: target) } // symlink or real dir
+                if itemExists(target) { try DirectoryLink.removeTree(at: target) } // symlink or real dir
                 let src = backupDir.appendingPathComponent(name).appendingPathComponent(tree)
                 if isRealDirectory(src) {
                     try fm.copyItem(at: src, to: target)
@@ -512,7 +510,7 @@ public final class ProfileManager: Sendable {
         var master = pile
         if let preferred, preferred.path != pile.path {
             if isRealDirectory(preferred) { try merge(contentsOf: preferred, into: pile) }
-            if itemExists(preferred) { try fm.removeItem(at: preferred) } // island dir or stale symlink
+            if itemExists(preferred) { try DirectoryLink.removeTree(at: preferred) } // island dir or stale symlink
             try fm.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: pile, to: preferred)
             try DirectoryLink.create(at: pile, pointingTo: preferred)
@@ -523,11 +521,11 @@ public final class ProfileManager: Sendable {
         for entry in try orgEntries() where entry.path != master.path {
             if isRealDirectory(entry) {
                 try merge(contentsOf: entry, into: master)
-                try fm.removeItem(at: entry)
-            } else if (try? DirectoryLink.destination(of: entry)) == master.path {
+                try DirectoryLink.removeTree(at: entry)
+            } else if (try? DirectoryLink.destination(of: entry))?.path == master.path {
                 continue // already points straight at the master
             } else {
-                try fm.removeItem(at: entry)
+                try DirectoryLink.remove(at: entry)
             }
             try DirectoryLink.create(at: entry, pointingTo: master)
         }
@@ -553,11 +551,13 @@ public final class ProfileManager: Sendable {
 
     // lstat semantics: attributesOfItem does not traverse the final symlink,
     // so these are safe on broken symlinks and never confuse a link with a dir.
+    // The link checks cover Windows junctions, which can read as directories
+    // (or not at all, once dangling).
     private func itemType(_ url: URL) -> FileAttributeType? {
         (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType
     }
 
-    private func itemExists(_ url: URL) -> Bool { itemType(url) != nil }
+    private func itemExists(_ url: URL) -> Bool { itemType(url) != nil || isSymlink(url) }
     private func isSymlink(_ url: URL) -> Bool { DirectoryLink.isLink(url) }
-    private func isRealDirectory(_ url: URL) -> Bool { itemType(url) == .typeDirectory }
+    private func isRealDirectory(_ url: URL) -> Bool { itemType(url) == .typeDirectory && !isSymlink(url) }
 }

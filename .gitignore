@@ -22,3 +22,6 @@ xcuserdata/
 auth.json
 profiles/
 __pycache__/
+
+# Report from scripts/windows-research.ps1 (machine details)
+scripts/windows-research.txt

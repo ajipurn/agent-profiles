@@ -49,7 +49,7 @@ var targets: [Target] = [
     // Claude core tests (Swift Testing — runs on Command Line Tools too).
     .testTarget(
         name: "ClaudeProfilesCoreTests",
-        dependencies: ["ClaudeProfilesCore"]
+        dependencies: ["ClaudeProfilesCore", "PlatformSupport"]
     ),
 ]
 
