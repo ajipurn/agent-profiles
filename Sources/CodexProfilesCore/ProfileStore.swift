@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 public struct Profile: Equatable, Sendable, Identifiable, Codable {
     public var id: UUID
@@ -182,11 +183,9 @@ public struct CodexPaths: Equatable, Sendable {
 
     public static func `default`(fileManager: FileManager = .default) -> CodexPaths {
         let home = fileManager.homeDirectoryForCurrentUser
-        let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? home.appendingPathComponent("Library/Application Support")
         return CodexPaths(
             codexHome: home.appendingPathComponent(".codex", isDirectory: true),
-            storeRoot: support.appendingPathComponent("CodexProfiles", isDirectory: true)
+            storeRoot: PlatformPaths.appData(home: home).appendingPathComponent("CodexProfiles", isDirectory: true)
         )
     }
 }

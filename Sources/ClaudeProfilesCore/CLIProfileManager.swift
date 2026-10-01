@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 /// Claude Code (CLI) profiles. Nothing like the Desktop flow: no symlink, no
 /// app lifecycle. Each profile is its own CLAUDE_CONFIG_DIR; Claude Code keeps
@@ -15,7 +16,7 @@ public final class CLIProfileManager: Sendable {
     }
 
     // Lives under the `_` prefix so ProfileManager.profiles() never lists it.
-    public var cliDir: URL { home.appendingPathComponent("Library/Application Support/Claude-Profiles/_cli") }
+    public var cliDir: URL { PlatformPaths.appData(home: home).appendingPathComponent("Claude-Profiles/_cli") }
     public var profilesDir: URL { cliDir.appendingPathComponent("profiles") }
     public var shim: URL { cliDir.appendingPathComponent("bin/claude") }
     public var profileTool: URL { cliDir.appendingPathComponent("bin/claude-profile") }
@@ -24,7 +25,10 @@ public final class CLIProfileManager: Sendable {
     /// The one line the user adds to ~/.zshrc. Prepending keeps the shim ahead
     /// of the real binary no matter where it is installed.
     public static let pathLine =
-        #"export PATH="$HOME/Library/Application Support/Claude-Profiles/_cli/bin:$PATH""#
+        #"export PATH="\#(shellBase)/bin:$PATH""#
+
+    /// `_cli` as the scripts spell it, so they follow PlatformPaths too.
+    static let shellBase = "$HOME/\(PlatformPaths.appDataRelativePath)/Claude-Profiles/_cli"
 
     public var isSetUp: Bool { fm.isExecutableFile(atPath: shim.path) }
 
@@ -106,12 +110,17 @@ public final class CLIProfileManager: Sendable {
 
     /// Idempotent: safe to re-run, always writes the current scripts.
     public func installShim() throws {
+        #if os(Windows)
+        // The scripts are POSIX sh; Windows needs .cmd/.ps1 shims instead.
+        throw PlatformError.unsupported("The claude CLI shim")
+        #else
         try fm.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
         try Self.shimScript.write(to: shim, atomically: true, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
+        try FilePermissions.set(0o755, at: shim)
         try Self.profileToolScript.write(to: profileTool, atomically: true, encoding: .utf8)
-        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: profileTool.path)
+        try FilePermissions.set(0o755, at: profileTool)
+        #endif
     }
 
     private func isDirectory(_ url: URL) -> Bool {
@@ -123,7 +132,7 @@ public final class CLIProfileManager: Sendable {
     # Claude Profiles CLI shim — runs `claude` as the profile picked in the
     # menu bar app. An explicit CLAUDE_CONFIG_DIR (env or alias) always wins,
     # and the Default profile leaves everything untouched (plain ~/.claude).
-    base="$HOME/Library/Application Support/Claude-Profiles/_cli"
+    base="\(shellBase)"
     if [ -z "${CLAUDE_CONFIG_DIR:-}" ] && [ -f "$base/active" ]; then
         IFS= read -r name < "$base/active"
         if [ -n "$name" ] && [ -d "$base/profiles/$name" ]; then
@@ -149,7 +158,7 @@ public final class CLIProfileManager: Sendable {
     # Same effect as clicking a terminal icon in the menu bar app: rewrites
     # _cli/active, which the `claude` shim reads at every launch. Applies to
     # claude commands started from now on, never to ones already running.
-    base="$HOME/Library/Application Support/Claude-Profiles/_cli"
+    base="\(shellBase)"
     case "${1:-}" in
     "")
         name=""

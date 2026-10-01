@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 /// Finds the session logs from the last month, parses the ones that changed
 /// since the previous scan, and totals them. Runs off the main thread.
@@ -19,7 +20,7 @@ public actor CostScanner {
             let fm = FileManager.default
             var claude = [home.appendingPathComponent(".claude/projects"),
                           home.appendingPathComponent(".config/claude/projects")]
-            let profiles = home.appendingPathComponent("Library/Application Support/Claude-Profiles/_cli/profiles")
+            let profiles = PlatformPaths.appData(home: home).appendingPathComponent("Claude-Profiles/_cli/profiles")
             for name in (try? fm.contentsOfDirectory(atPath: profiles.path)) ?? [] where !name.hasPrefix(".") {
                 claude.append(profiles.appendingPathComponent(name).appendingPathComponent("projects"))
             }

@@ -1,6 +1,6 @@
 import Foundation
-import os
 import CZstd
+import PlatformSupport
 
 /// The official usage-limit numbers for one account, as last seen by Claude
 /// Desktop itself. Read from the profile's own HTTP cache — the app makes no
@@ -47,7 +47,7 @@ public enum UsageReader {
         let size: Int
         let usage: ProfileUsage?
     }
-    private static let parsedCache = OSAllocatedUnfairLock(initialState: [String: ParsedEntry]())
+    private static let parsedCache = LockedValue([String: ParsedEntry]())
 
     /// Newest cached usage snapshot in `dir`. When `orgIDs` is non-empty and
     /// any entry matches one of them, only those entries are considered — a

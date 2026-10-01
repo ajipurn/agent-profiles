@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 public enum ProfileError: LocalizedError, Equatable {
     case invalidName
@@ -47,8 +48,8 @@ public final class ProfileManager: Sendable {
         self.home = home.standardizedFileURL
     }
 
-    public var claudeDir: URL { home.appendingPathComponent("Library/Application Support/Claude") }
-    public var profilesDir: URL { home.appendingPathComponent("Library/Application Support/Claude-Profiles") }
+    public var claudeDir: URL { PlatformPaths.appData(home: home).appendingPathComponent("Claude") }
+    public var profilesDir: URL { PlatformPaths.appData(home: home).appendingPathComponent("Claude-Profiles") }
     public var sharedDir: URL { profilesDir.appendingPathComponent("_shared-sessions") }
     // Display order for the unified list, one name per line. `_` prefix keeps
     // profiles() from listing it. Order is a plain list, never dir renames —
@@ -61,7 +62,7 @@ public final class ProfileManager: Sendable {
         guard let type = itemType(claudeDir) else { return .missing }
         switch type {
         case .typeSymbolicLink:
-            let target = (try? fm.destinationOfSymbolicLink(atPath: claudeDir.path))
+            let target = (try? DirectoryLink.destination(of: claudeDir))
                 .map { URL(fileURLWithPath: $0, relativeTo: claudeDir.deletingLastPathComponent()).standardizedFileURL }
             let valid = target.map { isRealDirectory($0) } ?? false
             return .symlink(target: target, valid: valid)
@@ -159,7 +160,7 @@ public final class ProfileManager: Sendable {
             for tree in Self.sessionTrees {
                 let sharedTree = sharedDir.appendingPathComponent(tree)
                 guard isRealDirectory(sharedTree) else { continue }
-                try fm.createSymbolicLink(at: dir.appendingPathComponent(tree), withDestinationURL: sharedTree)
+                try DirectoryLink.create(at: dir.appendingPathComponent(tree), pointingTo: sharedTree)
             }
         }
         return name
@@ -221,7 +222,7 @@ public final class ProfileManager: Sendable {
                     try fm.removeItem(at: link)
                 }
                 // Missing trees get linked too, so future sessions land in the shared tree.
-                try fm.createSymbolicLink(at: link, withDestinationURL: sharedTree)
+                try DirectoryLink.create(at: link, pointingTo: sharedTree)
             }
             let preferred = active.flatMap { activeOrgDir(in: sharedTree, profile: $0) }
             let master = try consolidateOrgDirs(in: sharedTree, preferred: preferred)
@@ -397,7 +398,7 @@ public final class ProfileManager: Sendable {
                 let orgDir = tree.appendingPathComponent(account).appendingPathComponent(org)
                 guard !itemExists(orgDir) else { continue } // real or already linked
                 try fm.createDirectory(at: orgDir.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fm.createSymbolicLink(at: orgDir, withDestinationURL: master)
+                try DirectoryLink.create(at: orgDir, pointingTo: master)
                 created += 1
             }
         }
@@ -444,22 +445,14 @@ public final class ProfileManager: Sendable {
     // MARK: - Internals
 
     /// Repoint the `Claude` symlink. Never deletes anything that is not a symlink.
-    /// Atomic: the new link is created beside the old one and rename(2)d over it,
-    /// so a crash mid-switch can never leave the path missing or dangling.
+    /// Atomic (see DirectoryLink.replace): a crash mid-switch can never leave
+    /// the path missing or dangling.
     private func pointClaudeDir(at dest: URL) throws {
         switch claudeDirState() {
         case .realDirectory, .otherFile:
             throw ProfileError.refusedToClobber(claudeDir.path)
         case .missing, .symlink:
-            let tmp = claudeDir.deletingLastPathComponent()
-                .appendingPathComponent(".claude-link-\(ProcessInfo.processInfo.processIdentifier)")
-            try? fm.removeItem(at: tmp)
-            try fm.createSymbolicLink(at: tmp, withDestinationURL: dest)
-            guard rename(tmp.path, claudeDir.path) == 0 else {
-                let err = errno
-                try? fm.removeItem(at: tmp)
-                throw POSIXError(POSIXErrorCode(rawValue: err) ?? .EIO)
-            }
+            try DirectoryLink.replace(at: claudeDir, pointingTo: dest)
         }
     }
 
@@ -522,7 +515,7 @@ public final class ProfileManager: Sendable {
             if itemExists(preferred) { try fm.removeItem(at: preferred) } // island dir or stale symlink
             try fm.createDirectory(at: preferred.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: pile, to: preferred)
-            try fm.createSymbolicLink(at: pile, withDestinationURL: preferred)
+            try DirectoryLink.create(at: pile, pointingTo: preferred)
             master = preferred
         }
 
@@ -531,12 +524,12 @@ public final class ProfileManager: Sendable {
             if isRealDirectory(entry) {
                 try merge(contentsOf: entry, into: master)
                 try fm.removeItem(at: entry)
-            } else if (try? fm.destinationOfSymbolicLink(atPath: entry.path)) == master.path {
+            } else if (try? DirectoryLink.destination(of: entry)) == master.path {
                 continue // already points straight at the master
             } else {
                 try fm.removeItem(at: entry)
             }
-            try fm.createSymbolicLink(at: entry, withDestinationURL: master)
+            try DirectoryLink.create(at: entry, pointingTo: master)
         }
         return master
     }
@@ -565,6 +558,6 @@ public final class ProfileManager: Sendable {
     }
 
     private func itemExists(_ url: URL) -> Bool { itemType(url) != nil }
-    private func isSymlink(_ url: URL) -> Bool { itemType(url) == .typeSymbolicLink }
+    private func isSymlink(_ url: URL) -> Bool { DirectoryLink.isLink(url) }
     private func isRealDirectory(_ url: URL) -> Bool { itemType(url) == .typeDirectory }
 }
