@@ -96,6 +96,7 @@ struct GeneralSettingsView: View {
     @AppStorage(Preferences.menuBarProviderKey) private var provider: MenuBarProvider = .claude
     @AppStorage(Preferences.showPercentKey) private var showPercent = true
     @AppStorage(Preferences.followActiveAppKey) private var followActiveApp = true
+    @AppStorage(Preferences.showCostKey) private var showCost = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -107,6 +108,7 @@ struct GeneralSettingsView: View {
                 .pickerStyle(.segmented)
                 Toggle("Follow the active app", isOn: $followActiveApp)
                 Toggle("Show percentage next to the icon", isOn: $showPercent)
+                Toggle("Show estimated cost in the menu", isOn: $showCost)
             } header: {
                 Text("Menu Bar")
             } footer: {

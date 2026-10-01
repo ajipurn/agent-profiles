@@ -53,15 +53,26 @@ Profiles is running, it asks to quit them first and does not start otherwise.
 
 ## What it looks like
 
-The menu follows [CodexBar](https://github.com/steipete/CodexBar)'s design:
+The panel follows [OpenUsage](https://github.com/robinebers/openusage)'s design:
 
 - **Menu bar:** a two-bar icon, with the session window on top and the weekly
-  window below, plus the session percentage. It shows the provider picked in
-  Settings → General (Claude or Codex).
-- **Menu (either click):** Claude | Codex tabs, the selected provider's card
-  (account, freshness, Session and Weekly bars with reset countdowns), the
-  other accounts to switch to, and actions. Claude also gets a Claude Code
-  profile submenu once CLI profiles are set up.
+  window below, plus the session percentage. It follows the frontmost Claude
+  or Codex app, or the provider picked in Settings → General.
+- **Panel (click the icon):** estimated cost (Today, Yesterday, 30 Days) as a
+  ring per provider, Claude | Codex tabs, the selected provider's card
+  (account, freshness, Session and Weekly bars with reset countdowns and
+  pace), the other accounts to switch to, and actions. Claude also gets a
+  Claude Code profile picker once CLI profiles are set up.
+- **Pace:** a bar stays blue while the current burn rate leaves at least 10%
+  at the reset, turns yellow when it would land in the last 10%, and red with
+  the projected run-out time when it would run out first. Yellow and red bars
+  show a tick where an even burn would be.
+- **Cost:** read from local Claude Code (`~/.claude/projects`, and each CLI
+  profile) and Codex (`~/.codex/sessions`) logs and priced at API list rates
+  from a bundled [LiteLLM](https://github.com/BerriAI/litellm) snapshot
+  (`python3 scripts/update-pricing.py` refreshes it). It is an estimate:
+  Claude Desktop chats keep no local token log, and on a subscription it is
+  the value of what you used, not a bill. Nothing leaves your Mac.
 - **Settings window:** General (menu bar, launch at login, updates), Claude
   (profiles, Desktop and CLI switching, rename, delete, order, shared session
   history, CLI setup), Codex (accounts, favorites, rename, remove, sign-in,
@@ -69,7 +80,7 @@ The menu follows [CodexBar](https://github.com/steipete/CodexBar)'s design:
 
 Everything both old apps did is still there.
 
-The app icon, two switches offset like ⇄ in Claude's orange and Codex's teal,
+The app icon, a dial with two gauge arcs chasing each other in Claude's orange and Codex's teal,
 is drawn in code: `swift scripts/make-icon.swift` regenerates
 `Resources/AppIcon.icns` and `docs/icon.png`.
 
@@ -122,10 +133,12 @@ These must not change, or existing installs break:
 Sources/CZstd/                  vendored zstd, decompress only (BSD)   ← claude-profiles
 Sources/ClaudeProfilesCore/     Claude profile logic, no UI            ← claude-profiles
 Sources/CodexProfilesCore/      Codex profile logic, no UI             ← codex-profiles
-Sources/AgentUI/                menu card, bars, switcher, menu bar icon (shared)
+Sources/UsageCostCore/          cost estimate from local logs, no UI
+Sources/AgentUI/                panel cards, bars, cost ring, switcher, menu bar icon (shared)
 Sources/CodexProfilesUI/        Codex model, settings pane, updater    ← codex-profiles
-Sources/AgentProfiles/          app shell, menu, Settings, Claude pane ← claude-profiles
+Sources/AgentProfiles/          app shell, panel, Settings, Claude pane ← claude-profiles
 Tests/ClaudeProfilesCoreTests/  Swift Testing (ported from XCTest)
+Tests/UsageCostCoreTests/       Swift Testing
 Tests/CodexProfilesCheck/       plain executable checks
 ```
 

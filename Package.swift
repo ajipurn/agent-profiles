@@ -33,6 +33,9 @@ let package = Package(
         ),
         // Imported from codex-profiles.
         .target(name: "CodexProfilesCore"),
+        // Estimated spend from local Claude Code and Codex logs, priced with
+        // a generated LiteLLM snapshot (scripts/update-pricing.py).
+        .target(name: "UsageCostCore"),
         // Menu card, account rows, switcher and menu bar icon shared by both
         // providers (CodexBar-style).
         .target(name: "AgentUI"),
@@ -44,7 +47,7 @@ let package = Package(
         // screens directly and the Codex ones from CodexProfilesUI.
         .executableTarget(
             name: "AgentProfiles",
-            dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI"],
+            dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
@@ -56,6 +59,10 @@ let package = Package(
             name: "CodexProfilesCheck",
             dependencies: ["CodexProfilesCore"],
             path: "Tests/CodexProfilesCheck"
+        ),
+        .testTarget(
+            name: "UsageCostCoreTests",
+            dependencies: ["UsageCostCore"]
         ),
         // Claude core tests (Swift Testing — runs on Command Line Tools too).
         .testTarget(

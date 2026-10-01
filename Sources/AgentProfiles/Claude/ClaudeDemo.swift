@@ -21,10 +21,39 @@ enum ClaudeDemo {
                 try writeUsage(into: manager.profilesDir.appendingPathComponent(sample.name),
                                fiveHourUsed: sample.fiveHour, sevenDayUsed: sample.sevenDay)
             }
+            try writeSessionLogs(into: home)
         } catch {
             NSLog("[Agent Profiles] Claude preview setup failed: %@", error.localizedDescription)
         }
         return home
+    }
+
+    /// A month of made-up Claude Code and Codex session logs for the Cost
+    /// card, in the formats the real CLIs write.
+    private static func writeSessionLogs(into home: URL) throws {
+        let fm = FileManager.default
+        let claudeDir = home.appendingPathComponent(".claude/projects/-demo")
+        let codexDir = home.appendingPathComponent(".codex/sessions/demo")
+        try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter()
+        var claude: [String] = []
+        var codex = [#"{"timestamp":"\#(stamp.string(from: .now))","type":"turn_context","payload":{"model":"gpt-6.1-sol"}}"#]
+        var codexTotal = (input: 0, cached: 0, output: 0)
+        for daysAgo in 0..<30 {
+            let date = Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 600)
+            let scale = daysAgo == 1 ? 1 : (daysAgo % 3) + 1
+            for turn in 0..<(4 * scale) {
+                let time = stamp.string(from: date.addingTimeInterval(Double(turn) * 60))
+                claude.append(#"{"type":"assistant","timestamp":"\#(time)","requestId":"req_\#(daysAgo)_\#(turn)","message":{"id":"msg_\#(daysAgo)_\#(turn)","model":"claude-opus-5-5","usage":{"input_tokens":40,"cache_creation_input_tokens":12000,"cache_read_input_tokens":90000,"output_tokens":1800}}}"#)
+                codexTotal.input += 60_000
+                codexTotal.cached += 45_000
+                codexTotal.output += 900
+                codex.append(#"{"timestamp":"\#(time)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":\#(codexTotal.input),"cached_input_tokens":\#(codexTotal.cached),"output_tokens":\#(codexTotal.output)}}}}"#)
+            }
+        }
+        try claude.joined(separator: "\n").write(to: claudeDir.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+        try codex.joined(separator: "\n").write(to: codexDir.appendingPathComponent("rollout.jsonl"), atomically: true, encoding: .utf8)
     }
 
     /// One Chromium simple-cache entry holding a `/usage` response, in the

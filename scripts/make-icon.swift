@@ -2,9 +2,10 @@
 // Draws the Agent Profiles app icon and writes Resources/AppIcon.icns plus a
 // preview at docs/icon.png. Usage: swift scripts/make-icon.swift [repo root]
 //
-// The mark: two pills offset like ⇄, Claude's orange over Codex's teal, each
-// with its knob at the far end. It reads as a swap (switching accounts) and
-// as a pair of switches/meters (the usage each one has left).
+// The mark: a dial with a fine scale and two gauge arcs chasing each other
+// round it, Codex's teal over Claude's orange, each ending in a white knob.
+// It reads as a swap (switching accounts) and as two meters (the usage each
+// one has left).
 import AppKit
 
 let root = URL(fileURLWithPath: CommandLine.arguments.count > 1
@@ -36,10 +37,6 @@ func squircle(_ rect: CGRect, exponent n: CGFloat = 5.2) -> NSBezierPath {
     return path
 }
 
-func pill(_ rect: CGRect) -> NSBezierPath {
-    NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-}
-
 func withShadow(_ color: NSColor, blur: CGFloat, offset: NSSize = .zero, _ draw: () -> Void) {
     NSGraphicsContext.saveGraphicsState()
     let shadow = NSShadow()
@@ -60,11 +57,11 @@ func drawBackground() {
     NSGraphicsContext.saveGraphicsState()
     shape.addClip()
     NSGradient(starting: ink, ending: inkDeep)!.draw(in: body, angle: -90)
-    // Faint provider-colored light behind each pill.
+    // Faint provider-colored light behind each arc.
     NSGradient(colors: [orange.withAlphaComponent(0.20), orange.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: 400, y: 640), radius: 0, toCenter: NSPoint(x: 400, y: 640), radius: 420, options: [])
+        .draw(fromCenter: NSPoint(x: 512, y: 300), radius: 0, toCenter: NSPoint(x: 512, y: 300), radius: 420, options: [])
     NSGradient(colors: [teal.withAlphaComponent(0.16), teal.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: 624, y: 384), radius: 0, toCenter: NSPoint(x: 624, y: 384), radius: 420, options: [])
+        .draw(fromCenter: NSPoint(x: 512, y: 724), radius: 0, toCenter: NSPoint(x: 512, y: 724), radius: 420, options: [])
     // Top sheen.
     NSGradient(colors: [NSColor.white.withAlphaComponent(0.09), NSColor.white.withAlphaComponent(0)])!
         .draw(in: CGRect(x: body.minX, y: body.midY, width: body.width, height: body.height / 2), angle: -90)
@@ -76,47 +73,78 @@ func drawBackground() {
     edge.stroke()
 }
 
-/// A glassy pill with its knob at one end.
-func drawPill(_ rect: CGRect, knobAtRight: Bool, color: NSColor, deep: NSColor) {
-    let shape = pill(rect)
-    withShadow(color.withAlphaComponent(0.55), blur: 56) {
-        color.setFill()
-        shape.fill()
+/// Fine scale around the edge of the dial, every fifth tick stronger.
+func drawTicks(center: CGPoint, radius: CGFloat) {
+    for i in 0..<72 {
+        let major = i % 6 == 0
+        let angle = CGFloat(i) / 72 * 2 * .pi
+        let inner = radius - (major ? 26 : 14)
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
+        path.line(to: NSPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius))
+        path.lineWidth = major ? 5 : 3
+        path.lineCapStyle = .round
+        NSColor.white.withAlphaComponent(major ? 0.26 : 0.11).setStroke()
+        path.stroke()
     }
-    NSGraphicsContext.saveGraphicsState()
-    shape.addClip()
-    NSGradient(starting: color, ending: deep)!.draw(in: rect, angle: -90)
-    // Glass highlight on the upper half.
-    NSGradient(colors: [NSColor.white.withAlphaComponent(0.30), NSColor.white.withAlphaComponent(0)])!
-        .draw(in: CGRect(x: rect.minX, y: rect.midY - 6, width: rect.width, height: rect.height / 2 + 6), angle: -90)
-    NSGraphicsContext.restoreGraphicsState()
-    // Inner rim.
-    let rim = pill(rect.insetBy(dx: 1.5, dy: 1.5))
-    rim.lineWidth = 3
-    NSColor.white.withAlphaComponent(0.22).setStroke()
-    rim.stroke()
+}
 
-    let inset: CGFloat = 20
-    let d = rect.height - inset * 2
-    let knob = CGRect(x: knobAtRight ? rect.maxX - inset - d : rect.minX + inset,
-                      y: rect.minY + inset, width: d, height: d)
-    withShadow(NSColor.black.withAlphaComponent(0.30), blur: 18, offset: NSSize(width: 0, height: -6)) {
+/// A gauge arc (degrees, counterclockwise from `from` to `to`) with a
+/// gradient along its sweep and a white knob at the leading end.
+func drawArc(center: CGPoint, radius: CGFloat, width: CGFloat, from: CGFloat, to: CGFloat,
+             color: NSColor, deep: NSColor) {
+    let arc = NSBezierPath()
+    arc.appendArc(withCenter: center, radius: radius, startAngle: from, endAngle: to, clockwise: false)
+    arc.lineWidth = width
+    arc.lineCapStyle = .round
+    withShadow(color.withAlphaComponent(0.60), blur: 60) {
+        color.setStroke()
+        arc.stroke()
+    }
+    // Fill the stroke's outline with a gradient running tail → head.
+    let cg = NSGraphicsContext.current!.cgContext
+    cg.saveGState()
+    cg.addPath(arc.cgPath)
+    cg.setLineWidth(width)
+    cg.setLineCap(.round)
+    cg.replacePathWithStrokedPath()
+    cg.clip()
+    let rad = { (deg: CGFloat) in deg * .pi / 180 }
+    let tail = CGPoint(x: center.x + cos(rad(from)) * radius, y: center.y + sin(rad(from)) * radius)
+    let head = CGPoint(x: center.x + cos(rad(to)) * radius, y: center.y + sin(rad(to)) * radius)
+    NSGradient(starting: deep, ending: color)!.draw(from: tail, to: head, options: [.drawsBeforeStartingLocation, .drawsAfterEndingLocation])
+    // Glass: a light band along the outer edge.
+    let sheen = NSBezierPath()
+    sheen.appendArc(withCenter: center, radius: radius + width * 0.22, startAngle: from, endAngle: to, clockwise: false)
+    sheen.lineWidth = width * 0.22
+    sheen.lineCapStyle = .round
+    NSColor.white.withAlphaComponent(0.22).setStroke()
+    sheen.stroke()
+    cg.restoreGState()
+
+    let d = width - 30
+    let knob = CGRect(x: head.x - d / 2, y: head.y - d / 2, width: d, height: d)
+    withShadow(NSColor.black.withAlphaComponent(0.35), blur: 16, offset: NSSize(width: 0, height: -5)) {
         NSColor.white.setFill()
         NSBezierPath(ovalIn: knob).fill()
     }
-    NSGradient(colors: [NSColor.white, NSColor(white: 0.90, alpha: 1)])!
+    NSGradient(colors: [NSColor.white, NSColor(white: 0.88, alpha: 1)])!
         .draw(in: NSBezierPath(ovalIn: knob), angle: -90)
 }
 
 func drawIcon() {
     drawBackground()
-    let height: CGFloat = 180, width: CGFloat = 548, offset: CGFloat = 92
-    // Two pills, offset by `offset`, centered as a pair on the canvas.
-    let left = (canvas - width - offset) / 2
-    drawPill(CGRect(x: left, y: 536, width: width, height: height),
-             knobAtRight: true, color: orange, deep: orangeDeep)
-    drawPill(CGRect(x: left + offset, y: 308, width: width, height: height),
-             knobAtRight: false, color: teal, deep: tealDeep)
+    let center = CGPoint(x: canvas / 2, y: canvas / 2)
+    drawTicks(center: center, radius: 370)
+    // Two arcs chasing each other round the dial: a swap, and two meters.
+    // Recessed face inside the arcs.
+    let face = NSBezierPath(ovalIn: CGRect(x: center.x - 186, y: center.y - 186, width: 372, height: 372))
+    NSGradient(colors: [inkDeep.withAlphaComponent(0.9), ink.withAlphaComponent(0.6)])!.draw(in: face, angle: -90)
+    face.lineWidth = 3
+    NSColor.white.withAlphaComponent(0.07).setStroke()
+    face.stroke()
+    drawArc(center: center, radius: 262, width: 84, from: 25, to: 155, color: teal, deep: tealDeep)
+    drawArc(center: center, radius: 262, width: 84, from: 205, to: 335, color: orange, deep: orangeDeep)
 }
 
 func png(pixels: Int) -> Data {

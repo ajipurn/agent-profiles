@@ -105,7 +105,8 @@ extension AppModel {
         case "Wk": "Weekly"
         default: "\(window.label) limit"
         }
-        return UsageLimit(title: title, remaining: window.remainingPercent, resetsAt: window.resetAt)
+        return UsageLimit(title: title, remaining: window.remainingPercent, resetsAt: window.resetAt,
+                          window: window.windowSeconds.map(TimeInterval.init))
     }
 
     static func sessionRemaining(_ usage: CodexUsage) -> Double? {

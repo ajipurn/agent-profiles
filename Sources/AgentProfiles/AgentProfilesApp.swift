@@ -35,10 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private(set) var state: AppState!
     private(set) var codex: AppModel!
     private var updates: UpdateController!
+    private var cost: CostModel!
     private var claudeDemoHome: URL?
 
     private var statusItem: NSStatusItem!
-    private var menuController: StatusMenuController!
+    private var panel: StatusPanelController!
     private var settingsWindow: NSWindow?
     private var cancellables: [Any] = []
     private var wasCompletingLogin = false
@@ -103,8 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
 
-        menuController = StatusMenuController(
-            claude: state, codex: codex,
+        // Start the first log scan now so the panel opens with numbers.
+        cost = CostModel(home: claudeDemoHome ?? FileManager.default.homeDirectoryForCurrentUser)
+        cost.refresh()
+        panel = StatusPanelController(
+            claude: state, codex: codex, cost: cost,
             defaultTab: { [weak self] in self?.displayedProvider ?? .claude },
             pickTab: { [weak self] provider in
                 // Also overrides the detected app, even if the preference
@@ -117,7 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             switchCodex: { [weak self] id in self?.switchCodex(id) })
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "dev.aji.AgentProfiles.status"
-        statusItem.menu = menuController.menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
         statusItem.button?.imagePosition = .imageLeading
         lastPickedProvider = Preferences.menuBarProvider
         activeAppProvider = MenuBarProvider(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
@@ -310,6 +315,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: Status item
+
+    @objc private func togglePanel() {
+        guard let button = statusItem.button else { return }
+        panel.toggle(from: button)
+    }
 
     /// Two-bar template icon (session over weekly) for the provider picked in
     /// Settings, plus the session percentage unless turned off.

@@ -24,6 +24,7 @@ enum Preferences {
     static let menuBarProviderKey = "menuBarProvider"
     static let showPercentKey = "showMenuBarPercent"
     static let followActiveAppKey = "menuBarFollowsActiveApp"
+    static let showCostKey = "showCostEstimate"
 
     static var menuBarProvider: MenuBarProvider? {
         get { UserDefaults.standard.string(forKey: menuBarProviderKey).flatMap(MenuBarProvider.init) }

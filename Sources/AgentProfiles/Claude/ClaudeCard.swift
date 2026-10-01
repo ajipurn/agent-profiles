@@ -22,7 +22,8 @@ extension AppState {
             card.badge = activeCLIProfile == active ? "Desktop · CLI" : "Desktop"
             if let usage = usage[active] {
                 card.subtitle = UsageFormat.updatedText(usage.asOf)
-                card.limits = [Self.limit("Session", usage.fiveHour), Self.limit("Weekly", usage.sevenDay)]
+                card.limits = [Self.limit("Session", usage.fiveHour, window: 5 * 3600),
+                               Self.limit("Weekly", usage.sevenDay, window: 7 * 86400)]
                     .compactMap { $0 }
                 card.isStale = claude.isRunning && Date().timeIntervalSince(usage.asOf) > Self.staleAfter
                 if card.isStale {
@@ -57,9 +58,9 @@ extension AppState {
     var canSwitchDesktop: Bool { mode == .ready && !isSwitching && claudeAppFound }
 
     /// An expired window has reset since Claude last looked: 100% and no countdown.
-    private static func limit(_ title: String, _ window: ProfileUsage.Window?) -> UsageLimit? {
-        guard let window else { return nil }
-        return UsageLimit(title: title, remaining: Double(window.remainingPercent),
-                          resetsAt: window.expired ? nil : window.resetsAt)
+    private static func limit(_ title: String, _ usage: ProfileUsage.Window?, window: TimeInterval) -> UsageLimit? {
+        guard let usage else { return nil }
+        return UsageLimit(title: title, remaining: Double(usage.remainingPercent),
+                          resetsAt: usage.expired ? nil : usage.resetsAt, window: window)
     }
 }
