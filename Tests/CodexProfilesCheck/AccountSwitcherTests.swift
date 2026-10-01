@@ -150,6 +150,7 @@ enum CodexProfilesCheck {
             ("prefers ChatGPT remaining_percent over used_percent", parseRemainingPercent),
             ("formats quota reset like ChatGPT", formatResetCaption),
             ("keeps a custom nickname when refreshing tokens", applyTokenRefreshPreservesIdentity),
+            ("looks for codex on PATH and in its usual folders", codexCandidatePaths),
         ]
         for (name, test) in cases {
             do {
@@ -671,6 +672,29 @@ enum CodexProfilesCheck {
         let laterCaption = UsageWindow(usedPercent: 13, resetAt: later, windowSeconds: 604_800).resetCaption
         try expect(laterCaption != nil, "weekly reset should show a date")
         try expect(laterCaption?.contains(":") != true, "weekly reset should look like Sep 12, got \(laterCaption ?? "nil")")
+    }
+
+    static func codexCandidatePaths() throws {
+        #if os(Windows)
+        let home = URL(fileURLWithPath: "C:\\Users\\tester")
+        let path = #"C:\tools\bin\;"C:\Program Files\nodejs";;C:\tools\bin"#
+        let found = CodexCLI.candidatePaths(home: home, environment: ["Path": path])
+        try expectEqual(Array(found.prefix(4)), [
+            #"C:\tools\bin\codex.exe"#, #"C:\tools\bin\codex.cmd"#,
+            #"C:\Program Files\nodejs\codex.exe"#, #"C:\Program Files\nodejs\codex.cmd"#,
+        ], "PATH entries unquoted, without trailing separators, .exe before .cmd")
+        try expectEqual(found.count, 5, "a repeated PATH entry collapses; npm's folder comes last")
+        try expect(found.last?.hasSuffix("npm/codex.cmd") == true || found.last?.hasSuffix(#"npm\codex.cmd"#) == true,
+                   "npm's default folder is the fallback, got \(found.last ?? "nil")")
+        #else
+        let home = URL(fileURLWithPath: "/tmp/codex-cli-check-\(UUID().uuidString)")
+        let found = CodexCLI.candidatePaths(home: home, environment: ["PATH": "/opt/a:/opt/b:/opt/a"])
+        try expectEqual(found.first, "/Applications/ChatGPT.app/Contents/Resources/codex",
+                        "the ChatGPT app's bundled CLI comes first")
+        let a = found.firstIndex(of: "/opt/a/codex"), b = found.firstIndex(of: "/opt/b/codex")
+        try expect(a != nil && b != nil && a! < b!, "PATH entries keep their order, got \(found)")
+        try expectEqual(found.filter { $0 == "/opt/a/codex" }.count, 1, "a repeated PATH entry collapses")
+        #endif
     }
 
     static func applyTokenRefreshPreservesIdentity() throws {

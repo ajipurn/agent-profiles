@@ -1,4 +1,5 @@
 import Foundation
+import PlatformSupport
 
 public struct CodexCLI {
     public var executable: URL
@@ -8,7 +9,37 @@ public struct CodexCLI {
     }
 
     public static func resolve() -> CodexCLI? {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let fm = FileManager.default
+        for path in candidatePaths() {
+            #if os(Windows)
+            let runnable = fm.fileExists(atPath: path) // the .exe/.cmd extension is what makes it runnable
+            #else
+            let runnable = fm.isExecutableFile(atPath: path)
+            #endif
+            if runnable { return CodexCLI(executable: URL(fileURLWithPath: path)) }
+        }
+        return nil
+    }
+
+    /// Where codex may live, most preferred first, without duplicates.
+    public static func candidatePaths(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
+        #if os(Windows)
+        // GUI apps get the user's PATH here, which npm, Scoop and WinGet all
+        // extend, so PATH comes first; npm's default folder backs it up.
+        // Only .exe and .cmd: npm's extensionless `codex` is a Git Bash script.
+        let path = environment.first { $0.key.uppercased() == "PATH" }?.value ?? ""
+        var candidates: [String] = []
+        for entry in path.split(separator: ";") {
+            var dir = entry.trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
+            while dir.hasSuffix("\\") { dir.removeLast() }
+            guard !dir.isEmpty else { continue }
+            candidates += ["codex.exe", "codex.cmd"].map { dir + "\\" + $0 }
+        }
+        candidates.append(PlatformPaths.appData(home: home).appendingPathComponent("npm/codex.cmd").path)
+        #else
         var candidates = [
             "/Applications/ChatGPT.app/Contents/Resources/codex",
             home.appendingPathComponent("Applications/ChatGPT.app/Contents/Resources/codex").path,
@@ -19,7 +50,7 @@ public struct CodexCLI {
             home.appendingPathComponent(".bun/bin/codex").path,
         ]
 
-        if let path = ProcessInfo.processInfo.environment["PATH"] {
+        if let path = environment["PATH"] {
             candidates.append(contentsOf: path.split(separator: ":").map {
                 URL(fileURLWithPath: String($0)).appendingPathComponent("codex").path
             })
@@ -35,14 +66,10 @@ public struct CodexCLI {
                 $0.appendingPathComponent("bin/codex").path
             })
         }
+        #endif
 
         var seen = Set<String>()
-        for path in candidates where seen.insert(path).inserted
-            && FileManager.default.isExecutableFile(atPath: path)
-        {
-            return CodexCLI(executable: URL(fileURLWithPath: path))
-        }
-        return nil
+        return candidates.filter { seen.insert($0).inserted }
     }
 
     public func logout() throws {
