@@ -330,7 +330,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Right-click (or Control-click): the few things that must always work,
     /// even if the panel doesn't.
     private func showQuickMenu() {
-        if panel.isShown { panel.close() }
+        if panel.isShown {
+            panel.close()
+            // Let the panel actually leave the screen before the menu's
+            // tracking loop takes over.
+            DispatchQueue.main.async { [weak self] in self?.showQuickMenu() }
+            return
+        }
         let menu = NSMenu()
         menu.addItem(QuickMenuItem("Settings…", key: ",") { [weak self] in self?.showSettings(.general) })
         menu.addItem(QuickMenuItem("Check for Updates…") { [weak self] in self?.updates.checkForUpdates() })

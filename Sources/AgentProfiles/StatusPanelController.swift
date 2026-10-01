@@ -16,6 +16,7 @@ final class StatusPanelController: NSObject {
     private weak var button: NSStatusBarButton?
     private var monitors: [Any] = []
     private var activationObserver: Any?
+    private var closedAt = Date.distantPast
     private let claude: AppState
     private let codex: AppModel
     private let cost: CostModel
@@ -54,6 +55,10 @@ final class StatusPanelController: NSObject {
             close()
             return
         }
+        // Pressing the icon makes macOS reactivate the app that was in
+        // front, which closes the panel before this click's action arrives.
+        // That click meant "close", not "open again" (1.3.3 flickered).
+        if Date().timeIntervalSince(closedAt) < 0.4 { return }
         self.button = button
         tab.selected = defaultTab() // always open on the provider the icon shows
         let host = NSHostingController(rootView: StatusPanelView(
@@ -84,6 +89,7 @@ final class StatusPanelController: NSObject {
 
     func close() {
         guard let window else { return }
+        closedAt = Date()
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
         if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
@@ -98,15 +104,20 @@ final class StatusPanelController: NSObject {
     /// Hangs the panel under the status item, its top edge fixed so it grows
     /// and shrinks downward, kept on screen.
     private func place(height: CGFloat) {
-        guard let window, let button, let buttonWindow = button.window,
-              let screen = buttonWindow.screen ?? NSScreen.main else { return }
-        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        guard let window, let anchor = buttonFrame,
+              let screen = button?.window?.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         var x = anchor.midX - Self.width / 2
         x = min(max(x, visible.minX + 8), visible.maxX - Self.width - 8)
         let top = anchor.minY - Self.gap
         let height = max(height.rounded(.up), Self.minHeight)
         window.setFrame(NSRect(x: x, y: top - height, width: Self.width, height: height), display: true)
+    }
+
+    /// The status item's icon in screen coordinates.
+    private var buttonFrame: NSRect? {
+        guard let button, let buttonWindow = button.window else { return nil }
+        return buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     /// Clicks in other apps, switching to another app, or Escape close the
@@ -116,7 +127,15 @@ final class StatusPanelController: NSObject {
     private func watchForDismissal(_ panel: PanelWindow) {
         panel.onCancel = { [weak self] in self?.close() }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            Task { @MainActor in self?.close() }
+            let location = NSEvent.mouseLocation
+            Task { @MainActor in
+                guard let self else { return }
+                // The menu bar delivers a click on our own icon here too.
+                // Leave it to the icon's action, which toggles; closing now
+                // made that action reopen the panel, so it flickered (1.3.3).
+                if self.buttonFrame?.contains(location) == true { return }
+                self.close()
+            }
         }) {
             monitors.append(global)
         }
