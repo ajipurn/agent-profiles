@@ -19,7 +19,7 @@ public enum SecureFile {
             try data.write(to: tmp, options: [.withoutOverwriting])
             try FilePermissions.set(mode, at: tmp)
             if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
+                try FileReplacement.replaceItem(at: url, withItemAt: tmp)
             } else {
                 try FileManager.default.moveItem(at: tmp, to: url)
             }

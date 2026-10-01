@@ -2,11 +2,14 @@ import Foundation
 
 public enum PlatformError: LocalizedError, Equatable {
     case unsupported(String)
+    case windows(code: UInt32, path: String)
 
     public var errorDescription: String? {
         switch self {
         case .unsupported(let what):
             return "\(what) is not supported on this platform yet."
+        case .windows(let code, let path):
+            return "Windows error \(code) at \(path)."
         }
     }
 }
