@@ -696,70 +696,7 @@ public final class AppModel {
             throw SwitcherError.loginFailed("codex CLI not found")
         }
         try SecureFile.ensureDirectory(paths.loginScript.deletingLastPathComponent())
-        let body = """
-        #!/bin/zsh
-        set -uo pipefail
-        umask 077
-        MARKER=\(zshSingleQuoted(paths.loginMarker.path))
-        STATE=\(zshSingleQuoted(paths.loginState.path))
-        PIDFILE=\(zshSingleQuoted(paths.loginProcess.path))
-        TTYFILE=\(zshSingleQuoted(paths.loginTTY.path))
-        CLI=\(zshSingleQuoted(cli.executable.path))
-        THIS_TTY="$(tty)"
-        LOGIN_PID=""
-
-        cleanup() {
-          rm -f "$PIDFILE"
-        }
-        cancelled() {
-          if [[ -n "$LOGIN_PID" ]]; then
-            kill "$LOGIN_PID" >/dev/null 2>&1 || true
-          fi
-          printf 'cancelled\\n' > "$STATE"
-          exit 130
-        }
-        trap cleanup EXIT
-        trap cancelled HUP INT TERM
-
-        printf '\\033]0;Agent Profiles Login\\007'
-        printf '%s\\n' "$THIS_TTY" > "$TTYFILE"
-        printf 'running\\n' > "$STATE"
-        rm -f "$MARKER"
-        echo "Agent Profiles — sign in to the ChatGPT account you want to add."
-        echo
-
-        "$CLI" login &
-        LOGIN_PID=$!
-        printf '%s\\n' "$LOGIN_PID" > "$PIDFILE"
-        wait "$LOGIN_PID"
-        STATUS=$?
-        if [[ "$STATUS" -ne 0 ]]; then
-          printf 'failed:%s\\n' "$STATUS" > "$STATE"
-          exit "$STATUS"
-        fi
-
-        touch "$MARKER"
-        printf 'succeeded\\n' > "$STATE"
-        (
-          sleep 0.4
-          /usr/bin/osascript - "$THIS_TTY" <<'APPLESCRIPT'
-        on run argv
-          set ttyName to item 1 of argv
-          tell application "Terminal"
-            repeat with w in windows
-              try
-                if (tty of selected tab of w) is ttyName then
-                  close w saving no
-                end if
-              end try
-            end repeat
-          end tell
-        end run
-        APPLESCRIPT
-        ) >/dev/null 2>&1 &
-        disown
-        exit 0
-        """
+        let body = cli.terminalLoginScript(paths: paths)
         try body.write(to: paths.loginScript, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
             [.posixPermissions: NSNumber(value: Int16(0o700))],
@@ -802,9 +739,5 @@ public final class AppModel {
         } catch {
             try? input.fileHandleForWriting.close()
         }
-    }
-
-    private static func zshSingleQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

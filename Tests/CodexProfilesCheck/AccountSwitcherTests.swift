@@ -117,7 +117,7 @@ enum AuthFixtures {
 enum CodexProfilesCheck {
     static func main() async {
         var failed = 0
-        let cases: [(String, () async throws -> Void)] = [
+        var cases: [(String, () async throws -> Void)] = [
             ("accepts signed HTTPS update configuration", validUpdateConfiguration),
             ("rejects incomplete or insecure update configuration", invalidUpdateConfiguration),
             ("migrates legacy settings without losing preferences", migrateSettings),
@@ -152,6 +152,12 @@ enum CodexProfilesCheck {
             ("keeps a custom nickname when refreshing tokens", applyTokenRefreshPreservesIdentity),
             ("looks for codex on PATH and in its usual folders", codexCandidatePaths),
         ]
+        #if os(macOS)
+        cases += [
+            ("Terminal login writes a fresh account to the managed Codex home", terminalLogin),
+            ("failed Terminal login does not mark the old account as a new login", failedTerminalLogin),
+        ]
+        #endif
         for (name, test) in cases {
             do {
                 try await test()
@@ -689,13 +695,92 @@ enum CodexProfilesCheck {
         #else
         let home = URL(fileURLWithPath: "/tmp/codex-cli-check-\(UUID().uuidString)")
         let found = CodexCLI.candidatePaths(home: home, environment: ["PATH": "/opt/a:/opt/b:/opt/a"])
-        try expectEqual(found.first, "/Applications/ChatGPT.app/Contents/Resources/codex",
+        try expectEqual(found.first, "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
                         "the ChatGPT app's bundled CLI comes first")
+        let userBundle = home.appendingPathComponent("Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex").path
+        try expect(found.contains(userBundle), "per-user ChatGPT installs should resolve the current bundled CLI")
+        let legacyBundle = found.firstIndex(of: "/Applications/ChatGPT.app/Contents/Resources/codex")
+        let homebrew = found.firstIndex(of: "/opt/homebrew/bin/codex")
+        try expect(legacyBundle != nil && homebrew != nil && legacyBundle! < homebrew!,
+                   "legacy bundled CLIs remain available ahead of standalone installations")
+        try expect(found.contains("/Applications/Codex.app/Contents/Resources/codex"),
+                   "the standalone Codex desktop app remains a bundled CLI source")
         let a = found.firstIndex(of: "/opt/a/codex"), b = found.firstIndex(of: "/opt/b/codex")
         try expect(a != nil && b != nil && a! < b!, "PATH entries keep their order, got \(found)")
         try expectEqual(found.filter { $0 == "/opt/a/codex" }.count, 1, "a repeated PATH entry collapses")
         #endif
     }
+
+    #if os(macOS)
+    static func terminalLogin() async throws {
+        try await withSwitcher(live: try AuthFixtures.snapshot(email: "work@example.com", accountID: "acc-work")) { env in
+            _ = try env.switcher.saveCurrent(name: "Work")
+            try await env.switcher.prepareForNewLogin()
+            try FileManager.default.removeItem(at: env.paths.codexHome)
+            let home = try AuthFixtures.snapshot(email: "home@example.com", accountID: "acc-home")
+            let fixture = env.paths.storeRoot.appendingPathComponent("new auth.json")
+            try SecureFile.atomicWrite(home.data, to: fixture)
+            let status = try runTerminalLogin(paths: env.paths, cliBody: """
+                #!/bin/sh
+                if [ "$CODEX_HOME" != "$EXPECTED_CODEX_HOME" ]; then
+                  echo 'Login used the inherited Codex home' >&2
+                  exit 17
+                fi
+                if [ "$*" != '-c cli_auth_credentials_store="file" login' ]; then
+                  echo 'Login did not select file credential storage' >&2
+                  exit 18
+                fi
+                cp "$FIXTURE_AUTH" "$CODEX_HOME/auth.json"
+                """, environment: [
+                    "CODEX_HOME": env.paths.storeRoot.appendingPathComponent("other-codex-home").path,
+                    "EXPECTED_CODEX_HOME": env.paths.codexHome.path,
+                    "FIXTURE_AUTH": fixture.path,
+                ])
+            try expectEqual(status, 0, "Terminal must authenticate against the managed home using file storage")
+            try expectEqual(try String(contentsOf: env.paths.loginState, encoding: .utf8), "succeeded\n")
+            try expect(env.switcher.loginDidFinish(), "fresh login must be detected")
+            let saved = try await env.switcher.completeNewLogin(name: "Home")
+            try expectEqual(saved.identity?.accountID, "acc-home")
+            try expectEqual(try env.switcher.liveState().matchingProfileID, saved.id)
+            try expectEqual(try env.switcher.profiles().map(\.name), ["Home", "Work"])
+        }
+    }
+
+    static func failedTerminalLogin() async throws {
+        try await withSwitcher(live: try AuthFixtures.snapshot(email: "work@example.com", accountID: "acc-work")) { env in
+            let work = try env.switcher.saveCurrent(name: "Work")
+            try await env.switcher.prepareForNewLogin()
+            let status = try runTerminalLogin(paths: env.paths, cliBody: "#!/bin/sh\nexit 23\n")
+            try expectEqual(status, 23)
+            try expectEqual(try String(contentsOf: env.paths.loginState, encoding: .utf8), "failed:23\n")
+            try expect(!env.switcher.loginDidFinish(), "failed CLI login must not complete Add Account")
+            try await env.switcher.restoreAfterLogin(previousProfileID: work.id)
+            try expectEqual(try env.switcher.liveState().matchingProfileID, work.id)
+            try expectEqual(try env.switcher.profiles().map(\.name), ["Work"])
+        }
+    }
+
+    static func runTerminalLogin(paths: CodexPaths, cliBody: String, environment: [String: String] = [:]) throws -> Int32 {
+        let executable = paths.storeRoot.appendingPathComponent("CLI's folder/fake codex")
+        try SecureFile.atomicWrite(Data(cliBody.utf8), to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let cli = CodexCLI(executable: executable)
+        // Exercise the production wrapper without closing windows or requesting Terminal automation access.
+        let script = cli.terminalLoginScript(paths: paths)
+            .replacingOccurrences(of: "/usr/bin/osascript", with: "/usr/bin/true")
+        try SecureFile.atomicWrite(Data(script.utf8), to: paths.loginScript)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = [paths.loginScript.path]
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value }
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+    #endif
 
     static func applyTokenRefreshPreservesIdentity() throws {
         let snapshot = try AuthFixtures.snapshot(email: "work@example.com", accountID: "user-work")
