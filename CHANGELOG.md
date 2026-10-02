@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.8
+
+- Fixed Add Account returning to the active Codex account when an outdated CLI could not read the current configuration. Sign-in now prefers the CLI bundled with ChatGPT or Codex.
+- Codex sign-in now saves credentials where Agent Profiles manages accounts, even when Terminal uses a different Codex home or credential store.
+- Improved cross-platform core support, including Windows directory junctions and Codex CLI discovery.
+
 ## 1.3.7
 
 - Codex is now blue, matching its app icon: in the cost ring, the Codex tab, Settings and the app icon's Codex arc
