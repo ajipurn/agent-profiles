@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.9
+
+- Claude profiles can now be deleted down to an empty list, including the active and last profile, so you can keep only Codex or only Claude profiles.
+- Deleting the active Claude Desktop profile closes Claude and removes its folder link. Automatic setup stays disabled until you choose Set Up Profiles again.
+- Claude Code profiles remain manageable after the last Desktop profile is deleted. Shared session history and the default Claude Code configuration are preserved.
+
 ## 1.3.8
 
 - Fixed Add Account returning to the active Codex account when an outdated CLI could not read the current configuration. Sign-in now prefers the CLI bundled with ChatGPT or Codex.
