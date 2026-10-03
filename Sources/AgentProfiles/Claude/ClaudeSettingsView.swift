@@ -26,8 +26,11 @@ struct ClaudeSettingsView: View {
             }
             if state.mode == .needsSetup {
                 setup
-            } else {
+            }
+            if state.mode == .ready || !state.allProfiles.isEmpty {
                 profiles
+            }
+            if !state.profiles.isEmpty {
                 history
             }
             cli
@@ -39,7 +42,7 @@ struct ClaudeSettingsView: View {
 
     private var setup: some View {
         Section("Get Started") {
-            Text("Setting up saves the account that is signed in to Claude now as your first profile. Claude restarts once and stays signed in.")
+            Text("Setting up creates your first Desktop profile and saves your current Claude login, if any. Claude restarts once.")
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
@@ -51,6 +54,10 @@ struct ClaudeSettingsView: View {
 
     private var profiles: some View {
         Section {
+            if state.allProfiles.isEmpty {
+                Text("No saved Claude profiles.")
+                    .foregroundStyle(.secondary)
+            }
             ForEach(Array(state.allProfiles.enumerated()), id: \.element) { index, name in
                 row(name, index: index)
             }
@@ -103,7 +110,6 @@ struct ClaudeSettingsView: View {
                     .disabled(index == state.allProfiles.count - 1)
                 Divider()
                 Button("Delete…", role: .destructive) { state.deleteProfile(name) }
-                    .disabled(desktop)
             } label: {
                 Image(systemName: "ellipsis.circle")
             }

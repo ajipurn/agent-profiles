@@ -198,14 +198,73 @@ final class ProfileManagerTests {
         #expect(try pm.renameProfile("a", to: "a") == "a") // no-op
     }
 
-    @Test func testDeleteProfileRefusesActiveDeletesInactive() throws {
+    @Test func testDeleteInactiveProfileKeepsActiveProfile() throws {
         try pm.migrate(name: "main")
         try pm.createProfile(name: "gone")
 
-        #expect(throws: ProfileError.profileIsActive("main")) { try pm.deleteProfile(name: "main") }
         try pm.deleteProfile(name: "gone")
         #expect(pm.profiles() == ["main"])
+        #expect(pm.activeProfile() == "main")
+        #expect(pm.automaticSetupAllowed)
         #expect(throws: ProfileError.profileNotFound("gone")) { try pm.deleteProfile(name: "gone") }
+    }
+
+    @Test func testDeleteActiveProfileRemovesLinkKeepsOtherProfiles() throws {
+        try makeRealClaudeDir()
+        try pm.migrate(name: "main")
+        try pm.createProfile(name: "work")
+        try write("work-data", to: profile("work").appendingPathComponent("Cookies"))
+
+        try pm.deleteProfile(name: "main")
+
+        #expect(pm.profiles() == ["work"])
+        #expect(pm.activeProfile() == nil)
+        #expect(pm.claudeDirState() == .missing)
+        #expect(!isSymlink(pm.claudeDir))
+        #expect(!pm.automaticSetupAllowed)
+        #expect(try String(contentsOf: profile("work").appendingPathComponent("Cookies"), encoding: .utf8)
+            == "work-data")
+        try pm.switchTo(name: "work")
+        #expect(pm.activeProfile() == "work")
+    }
+
+    @Test func testDeleteLastActiveProfileLeavesNoProfilesOrBrokenLink() throws {
+        try makeRealClaudeDir()
+        try pm.migrate(name: "main")
+
+        try pm.deleteProfile(name: "main")
+
+        let reopened = ProfileManager(home: home)
+        #expect(reopened.profiles().isEmpty)
+        #expect(reopened.activeProfile() == nil)
+        #expect(reopened.claudeDirState() == .missing)
+        #expect(!isSymlink(reopened.claudeDir))
+        #expect(!reopened.automaticSetupAllowed)
+        // A later standalone Claude login must not recreate a managed profile.
+        try makeRealClaudeDir()
+        #expect(!ProfileManager(home: home).automaticSetupAllowed)
+        #expect(reopened.profiles().isEmpty)
+        try reopened.migrate(name: "new")
+        #expect(reopened.activeProfile() == "new")
+        #expect(reopened.automaticSetupAllowed)
+    }
+
+    @Test func testDeleteLastInactiveProfileKeepsStandaloneClaudeData() throws {
+        try makeRealClaudeDir()
+        try pm.createProfile(name: "unused")
+
+        try pm.deleteProfile(name: "unused")
+
+        #expect(pm.profiles().isEmpty)
+        #expect(!pm.automaticSetupAllowed)
+        #expect(pm.claudeDirState() == .realDirectory)
+        #expect(try String(contentsOf: pm.claudeDir.appendingPathComponent("Cookies"), encoding: .utf8)
+            == "cookie-data")
+    }
+
+    @Test func testDeleteUnknownProfileKeepsAutomaticSetupAllowed() throws {
+        #expect(throws: ProfileError.profileNotFound("missing")) { try pm.deleteProfile(name: "missing") }
+        #expect(pm.automaticSetupAllowed)
     }
 
     @Test func testDeleteProfileKeepsSharedHistory() throws {
@@ -218,6 +277,21 @@ final class ProfileManagerTests {
         let master = pm.sharedDir.appendingPathComponent("\(ProfileManager.sessionTrees[0])/acct1/org1")
         #expect(fm.fileExists(atPath: master.appendingPathComponent("local_3.json").path),
                 "deleting a profile must not touch shared history")
+    }
+
+    @Test func testDeleteAllProfilesKeepsSharedHistory() throws {
+        try seedTwoProfiles()
+        try pm.enableSharedHistory()
+        try pm.switchTo(name: "a")
+
+        try pm.deleteProfile(name: "b")
+        try pm.deleteProfile(name: "a")
+
+        #expect(pm.profiles().isEmpty)
+        #expect(pm.activeProfile() == nil)
+        #expect(pm.claudeDirState() == .missing)
+        let master = pm.sharedDir.appendingPathComponent("\(ProfileManager.sessionTrees[0])/acct1/org1")
+        #expect(fm.fileExists(atPath: master.appendingPathComponent("local_3.json").path))
     }
 
     // MARK: - Shared history

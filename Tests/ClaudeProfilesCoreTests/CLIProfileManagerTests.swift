@@ -76,6 +76,30 @@ final class CLIProfileManagerTests {
         #expect(cli.profiles() == ["work"])
     }
 
+    @Test func testDeleteAllDesktopAndCLIProfiles() throws {
+        let desktop = ProfileManager(home: home)
+        try desktop.migrate(name: "main")
+        try cli.createProfile(name: "main")
+        try cli.createProfile(name: "cli-only")
+        try cli.setActive("main")
+        let defaultConfig = home.appendingPathComponent(".claude/settings.json")
+        try fm.createDirectory(at: defaultConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "default-data".write(to: defaultConfig, atomically: true, encoding: .utf8)
+
+        try desktop.deleteProfile(name: "main")
+        try cli.deleteProfile(name: "main")
+        #expect(desktop.profiles().isEmpty)
+        #expect(cli.profiles() == ["cli-only"])
+        #expect(cli.activeProfile() == nil)
+        try cli.setActive("cli-only")
+        try cli.deleteProfile(name: "cli-only")
+
+        #expect(cli.profiles().isEmpty)
+        #expect(cli.activeProfile() == nil)
+        #expect(desktop.claudeDirState() == .missing)
+        #expect(try String(contentsOf: defaultConfig, encoding: .utf8) == "default-data")
+    }
+
     @Test func testRenameMovesDirAndFollowsActive() throws {
         try cli.createProfile(name: "old")
         try cli.setActive("old")

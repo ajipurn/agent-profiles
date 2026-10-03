@@ -99,7 +99,7 @@ final class AppState: ObservableObject {
         case .realDirectory:
             mode = .needsSetup
         case .missing:
-            mode = profiles.isEmpty ? .needsSetup : .ready
+            mode = allProfiles.isEmpty ? .needsSetup : .ready
         default:
             mode = .ready
         }
@@ -116,6 +116,7 @@ final class AppState: ObservableObject {
     /// the way in. Tried once per launch.
     private func adoptExistingLogin() -> Bool {
         guard mode == .needsSetup, !triedAutoSetup, !isSwitching, !claude.isInert,
+              manager.automaticSetupAllowed,
               claude.appURL != nil, !claude.isRunning,
               manager.claudeDirState() == .realDirectory
         else { return false }
@@ -416,6 +417,7 @@ final class AppState: ObservableObject {
 
     /// Deletes the profile everywhere it exists — Desktop (= logout) and CLI data.
     func deleteProfile(_ name: String) {
+        guard !isSwitching else { return }
         let hasDesktop = profiles.contains(name)
         let hasCLI = cliCreated.contains(name)
         let alert = NSAlert()
@@ -423,6 +425,9 @@ final class AppState: ObservableObject {
         alert.messageText = "Delete profile “\(name)”?"
         var info = "This logs the account out by deleting its data. You would need to log in again next time. "
         if hasDesktop {
+            if manager.activeProfile() == name {
+                info += "Claude will be closed before deletion and stay closed afterwards. "
+            }
             info += sharedHistoryEnabled
                 ? "The shared session history is kept. "
                 : "Its session history is deleted with it. "
@@ -435,15 +440,19 @@ final class AppState: ObservableObject {
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do {
-            if hasDesktop { try manager.deleteProfile(name: name) } // throws if active
-            if hasCLI { try cli.deleteProfile(name: name) }
-            try? manager.saveOrder(manager.savedOrder().filter { $0 != name })
-            Notifier.post("Profile “\(name)” deleted")
-        } catch {
-            Notifier.post("Delete failed", error.localizedDescription)
+        run {
+            if hasDesktop, self.manager.activeProfile() == name, self.claude.isRunning {
+                guard await self.claude.quit() else { return self.abortQuitFailed() }
+            }
+            do {
+                if hasDesktop { try self.manager.deleteProfile(name: name) }
+                if hasCLI { try self.cli.deleteProfile(name: name) }
+                try? self.manager.saveOrder(self.manager.savedOrder().filter { $0 != name })
+                Notifier.post("Profile “\(name)” deleted")
+            } catch {
+                Notifier.post("Delete failed", error.localizedDescription)
+            }
         }
-        refresh()
     }
 
     func enableSharedHistory() {

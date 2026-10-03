@@ -7,7 +7,6 @@ public enum ProfileError: LocalizedError, Equatable {
     case profileNotFound(String)
     case refusedToClobber(String)
     case nothingToMigrate
-    case profileIsActive(String)
     case invalidBackup(String)
 
     public var errorDescription: String? {
@@ -22,8 +21,6 @@ public enum ProfileError: LocalizedError, Equatable {
             return "\(path) exists and is not a symlink; refusing to touch it."
         case .nothingToMigrate:
             return "The Claude directory is already managed; migration is not needed."
-        case .profileIsActive(let name):
-            return "Profile “\(name)” is active; switch away before deleting it."
         case .invalidBackup(let name):
             return "“\(name)” is not a session backup folder (no profile session trees inside)."
         }
@@ -55,6 +52,7 @@ public final class ProfileManager: Sendable {
     // profiles() from listing it. Order is a plain list, never dir renames —
     // renaming a profile would log its CLI side out (path = Keychain identity).
     private var orderFile: URL { profilesDir.appendingPathComponent("_order") }
+    private var autoSetupDisabledFile: URL { profilesDir.appendingPathComponent("_auto-setup-disabled") }
 
     // MARK: - Inspection
 
@@ -113,6 +111,10 @@ public final class ProfileManager: Sendable {
 
     public var sharedHistoryEnabled: Bool { isRealDirectory(sharedDir) }
 
+    /// Deleting the active or last Desktop profile opts out of adopting a new
+    /// standalone Claude login. Explicit setup re-enables it.
+    public var automaticSetupAllowed: Bool { !itemExists(autoSetupDisabledFile) }
+
     public static func sanitize(_ raw: String) -> String? {
         // @ and . allowed so email addresses work as profile names.
         let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-@."
@@ -139,6 +141,7 @@ public final class ProfileManager: Sendable {
             throw ProfileError.nothingToMigrate
         }
         try pointClaudeDir(at: dest)
+        if itemExists(autoSetupDisabledFile) { try fm.removeItem(at: autoSetupDisabledFile) }
     }
 
     public func switchTo(name: String) throws {
@@ -183,12 +186,22 @@ public final class ProfileManager: Sendable {
     }
 
     /// Delete a profile — this is "logout": the account's login state is removed.
-    /// The active profile can never be deleted (the symlink points at it).
+    /// Callers must have Claude quit before deleting the active profile. Its
+    /// link is removed too, so deleting the last profile leaves no broken link.
     public func deleteProfile(name: String) throws {
-        guard activeProfile() != name else { throw ProfileError.profileIsActive(name) }
         let dir = profilesDir.appendingPathComponent(name)
         guard isRealDirectory(dir) else { throw ProfileError.profileNotFound(name) }
-        try DirectoryLink.removeTree(at: dir) // shared trees are symlinks inside it — shared history survives
+        let wasActive = activeProfile() == name
+        if wasActive || profiles().count == 1 {
+            try Data().write(to: autoSetupDisabledFile, options: .atomic)
+        }
+        if wasActive { try DirectoryLink.remove(at: claudeDir) }
+        do {
+            try DirectoryLink.removeTree(at: dir) // shared trees are symlinks inside it — shared history survives
+        } catch {
+            if wasActive, isRealDirectory(dir) { try? pointClaudeDir(at: dir) }
+            throw error
+        }
     }
 
     /// Merge every profile's session trees into `_shared-sessions` and symlink them back.

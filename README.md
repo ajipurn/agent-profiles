@@ -98,7 +98,11 @@ No sign-in step for sessions that are already on the Mac:
 - **Claude:** if Claude is signed in but profiles were never set up, the
   current login becomes the first profile ("main") on its own, but only
   while Claude.app is quit, so nothing restarts. With Claude running, use
-  Set Up Profiles… in the menu.
+  Set Up Profiles… in the menu. All profiles can be deleted, including the
+  active and last profile. Deleting the active Desktop profile closes Claude
+  and removes its folder link; it stays closed afterwards. Deleting the active
+  or last Desktop profile also stops automatic setup until you choose
+  Set Up Profiles… again. You can keep only Claude or only Codex profiles.
 
 ## Shortcuts and scripting
 
