@@ -7,6 +7,8 @@ import PlatformSupport
 /// by the dir's path). A tiny `claude` shim on PATH reads the selected profile
 /// name from a text file at every launch, so switching = rewriting that file —
 /// it applies to `claude` commands started from then on, never to running ones.
+/// The shims are POSIX sh scripts, except on Windows: there one small launcher
+/// (Sources/ClaudeLauncher) is installed under both names as .exe files.
 public final class CLIProfileManager: Sendable {
     public let home: URL
     private var fm: FileManager { .default }
@@ -18,8 +20,13 @@ public final class CLIProfileManager: Sendable {
     // Lives under the `_` prefix so ProfileManager.profiles() never lists it.
     public var cliDir: URL { PlatformPaths.appData(home: home).appendingPathComponent("Claude-Profiles/_cli") }
     public var profilesDir: URL { cliDir.appendingPathComponent("profiles") }
+    #if os(Windows)
+    public var shim: URL { cliDir.appendingPathComponent("bin/claude.exe") }
+    public var profileTool: URL { cliDir.appendingPathComponent("bin/claude-profile.exe") }
+    #else
     public var shim: URL { cliDir.appendingPathComponent("bin/claude") }
     public var profileTool: URL { cliDir.appendingPathComponent("bin/claude-profile") }
+    #endif
     private var activeFile: URL { cliDir.appendingPathComponent("active") }
 
     /// The one line the user adds to ~/.zshrc. Prepending keeps the shim ahead
@@ -30,7 +37,13 @@ public final class CLIProfileManager: Sendable {
     /// `_cli` as the scripts spell it, so they follow PlatformPaths too.
     static let shellBase = "$HOME/\(PlatformPaths.appDataRelativePath)/Claude-Profiles/_cli"
 
-    public var isSetUp: Bool { fm.isExecutableFile(atPath: shim.path) }
+    public var isSetUp: Bool {
+        #if os(Windows)
+        fm.fileExists(atPath: shim.path) // the .exe extension is what makes it runnable
+        #else
+        fm.isExecutableFile(atPath: shim.path)
+        #endif
+    }
 
     /// UI-only flag: hides the Default (~/.claude) row. Nothing about the
     /// default account itself changes — the shim still falls back to it.
@@ -108,14 +121,16 @@ public final class CLIProfileManager: Sendable {
         try fm.removeItem(at: dir)
     }
 
-    /// Idempotent: safe to re-run, always writes the current scripts.
+    /// Idempotent: safe to re-run, always writes the current scripts (on
+    /// Windows, the current launcher).
     public func installShim() throws {
-        #if os(Windows)
-        // The scripts are POSIX sh; Windows needs .cmd/.ps1 shims instead.
-        throw PlatformError.unsupported("The claude CLI shim")
-        #else
         try fm.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
+        #if os(Windows)
+        let launcher = try Data(contentsOf: Self.bundledLauncher)
+        try installExecutable(launcher, at: shim)
+        try installExecutable(launcher, at: profileTool)
+        #else
         try Self.shimScript.write(to: shim, atomically: true, encoding: .utf8)
         try FilePermissions.set(0o755, at: shim)
         try Self.profileToolScript.write(to: profileTool, atomically: true, encoding: .utf8)
@@ -126,6 +141,36 @@ public final class CLIProfileManager: Sendable {
     private func isDirectory(_ url: URL) -> Bool {
         (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeDirectory
     }
+
+    #if os(Windows)
+    /// Built from Sources/ClaudeLauncher and shipped beside the program's own
+    /// executable (for tests, the test runner in the build folder).
+    static var bundledLauncher: URL {
+        let dir = Bundle.main.executableURL?.deletingLastPathComponent() ?? Bundle.main.bundleURL
+        return dir.appendingPathComponent("ClaudeLauncher.exe")
+    }
+
+    /// Puts `data` at `url` unless it is already there. A claude.exe that is
+    /// running can't be replaced, only renamed, so a running copy moves aside
+    /// first; leftovers go once nothing runs them anymore.
+    private func installExecutable(_ data: Data, at url: URL) throws {
+        let dir = url.deletingLastPathComponent()
+        let asidePrefix = url.lastPathComponent + ".old-"
+        for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where name.hasPrefix(asidePrefix) {
+            try? fm.removeItem(at: dir.appendingPathComponent(name))
+        }
+        if fm.contents(atPath: url.path) == data { return }
+
+        let staged = dir.appendingPathComponent(url.lastPathComponent + ".new")
+        try data.write(to: staged)
+        do {
+            try FileReplacement.replaceItem(at: url, withItemAt: staged)
+        } catch {
+            try fm.moveItem(at: url, to: dir.appendingPathComponent(asidePrefix + UUID().uuidString))
+            try FileReplacement.replaceItem(at: url, withItemAt: staged)
+        }
+    }
+    #endif
 
     static let shimScript = """
     #!/bin/sh

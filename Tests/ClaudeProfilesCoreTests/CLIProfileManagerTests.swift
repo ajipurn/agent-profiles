@@ -27,12 +27,29 @@ final class CLIProfileManagerTests {
         try cli.installShim()
         try cli.installShim()
         #expect(cli.isSetUp)
+        #if os(Windows)
+        // One launcher under both names.
+        #expect(cli.shim.lastPathComponent == "claude.exe")
+        #expect(cli.profileTool.lastPathComponent == "claude-profile.exe")
+        let launcher = try #require(fm.contents(atPath: cli.shim.path))
+        #expect(!launcher.isEmpty)
+        #expect(fm.contents(atPath: cli.profileTool.path) == launcher)
+
+        // An older copy is replaced, and what replacing a running one left behind goes.
+        try Data("stale".utf8).write(to: cli.shim)
+        let leftover = cli.shim.deletingLastPathComponent().appendingPathComponent("claude.exe.old-1")
+        try Data("old".utf8).write(to: leftover)
+        try cli.installShim()
+        #expect(fm.contents(atPath: cli.shim.path) == launcher)
+        #expect(!fm.fileExists(atPath: leftover.path))
+        #else
         #expect(fm.isExecutableFile(atPath: cli.shim.path))
         let script = try String(contentsOf: cli.shim, encoding: .utf8)
         #expect(script.hasPrefix("#!/bin/sh"))
         #expect(script.contains("CLAUDE_CONFIG_DIR"))
         #expect(fm.isExecutableFile(atPath: cli.profileTool.path))
         #expect(try String(contentsOf: cli.profileTool, encoding: .utf8).hasPrefix("#!/bin/sh"))
+        #endif
     }
 
     /// The claude-profile script must agree with CLIProfileManager about the
@@ -45,7 +62,7 @@ final class CLIProfileManagerTests {
             let p = Process()
             p.executableURL = cli.profileTool
             p.arguments = args
-            p.environment = ["HOME": home.path]
+            p.environment = environment()
             p.standardOutput = Pipe(); p.standardError = Pipe()
             try p.run(); p.waitUntilExit()
             return p.terminationStatus
@@ -58,6 +75,59 @@ final class CLIProfileManagerTests {
         #expect(try run(["ghost"]) != 0)
         #expect(cli.activeProfile() == nil) // failed switch changes nothing
     }
+
+    /// The shim runs the real claude, never itself, as the selected profile.
+    /// An explicit CLAUDE_CONFIG_DIR stays, and arguments and the exit code
+    /// pass through untouched.
+    @Test func testShimRunsRealClaudeAsSelectedProfile() throws {
+        try cli.installShim()
+        try cli.createProfile(name: "work")
+        let fakeBin = try makeFakeClaude()
+        let bin = nativePath(cli.shim.deletingLastPathComponent())
+        // The shim's own folder comes first, as the PATH setup puts it.
+        let path = [bin, nativePath(fakeBin)] + systemPath
+        #if os(Windows)
+        let typed = #"--print "hello world""#
+        #else
+        let typed = "--print|hello world|"
+        #endif
+
+        var result = try run(cli.shim, ["--print", "hello world"], environment(path: path))
+        #expect(result.status == 7)
+        #expect(result.output["config"] == "") // Default: plain ~/.claude
+        #expect(result.output["args"] == typed)
+
+        try cli.setActive("work")
+        result = try run(cli.shim, [], environment(path: path))
+        #expect(result.status == 7)
+        #expect(samePath(result.output["config"], cli.profilesDir.appendingPathComponent("work")))
+
+        let explicit = nativePath(home.appendingPathComponent("explicit"))
+        result = try run(cli.shim, [], environment(path: path, ["CLAUDE_CONFIG_DIR": explicit]))
+        #expect(result.output["config"] == explicit)
+
+        result = try run(cli.shim, [], environment(path: [bin] + systemPath))
+        #expect(result.status == 127) // only itself on PATH
+    }
+
+    #if os(Windows)
+    /// A claude.exe, the native installer's kind, gets the command line
+    /// exactly as typed, quotes and all. A copy of cmd.exe stands in for it.
+    @Test func testShimHandsCommandLineToRealExecutable() throws {
+        try cli.installShim()
+        try cli.createProfile(name: "work")
+        try cli.setActive("work")
+        let fakeBin = home.appendingPathComponent("fake-exe")
+        try fm.createDirectory(at: fakeBin, withIntermediateDirectories: true)
+        try fm.copyItem(at: URL(fileURLWithPath: systemPath[0] + "\\cmd.exe"),
+                        to: fakeBin.appendingPathComponent("claude.exe"))
+        let path = [nativePath(cli.shim.deletingLastPathComponent()), nativePath(fakeBin)] + systemPath
+
+        let result = try run(cli.shim, ["/d", "/c", "echo config=%CLAUDE_CONFIG_DIR%& exit 5"], environment(path: path))
+        #expect(result.status == 5)
+        #expect(samePath(result.output["config"], cli.profilesDir.appendingPathComponent("work")))
+    }
+    #endif
 
     @Test func testCreateListSwitchDelete() throws {
         try cli.createProfile(name: "work")
@@ -141,5 +211,99 @@ final class CLIProfileManagerTests {
         try fm.createDirectory(at: desktop.profilesDir.appendingPathComponent("main"),
                                withIntermediateDirectories: true)
         #expect(desktop.profiles() == ["main"])
+    }
+
+    // MARK: - Running the shims
+
+    /// Exactly what the shims get to see: this test's home and, if given,
+    /// this PATH. Windows programs also need SystemRoot, and cmd ComSpec.
+    func environment(path: [String]? = nil, _ extra: [String: String] = [:]) -> [String: String] {
+        var environment = extra
+        environment["HOME"] = home.path
+        #if os(Windows)
+        for name in ["SystemRoot", "ComSpec"] { environment[name] = currentVariable(name) }
+        if let path { environment["PATH"] = path.joined(separator: ";") }
+        #else
+        if let path { environment["PATH"] = path.joined(separator: ":") }
+        #endif
+        return environment
+    }
+
+    /// Folders the shims rely on: `which` and friends, or cmd.exe.
+    var systemPath: [String] {
+        #if os(Windows)
+        [(currentVariable("SystemRoot") ?? #"C:\Windows"#) + #"\System32"#]
+        #else
+        ["/usr/bin", "/bin"]
+        #endif
+    }
+
+    func currentVariable(_ name: String) -> String? {
+        ProcessInfo.processInfo.environment.first { $0.key.uppercased() == name.uppercased() }?.value
+    }
+
+    /// A path as the shims spell it: on Windows, a drive letter and backslashes.
+    func nativePath(_ url: URL) -> String {
+        #if os(Windows)
+        var path = url.withUnsafeFileSystemRepresentation { String(cString: $0!) }
+            .replacingOccurrences(of: "/", with: #"\"#)
+        if path.hasPrefix(#"\"#), path.dropFirst(2).first == ":" { path.removeFirst() }
+        return path
+        #else
+        return url.path
+        #endif
+    }
+
+    func samePath(_ printed: String?, _ url: URL) -> Bool {
+        #if os(Windows)
+        printed?.lowercased() == nativePath(url).lowercased()
+        #else
+        printed == nativePath(url)
+        #endif
+    }
+
+    /// A stand-in for the real claude, alone in its folder: it prints
+    /// `config=` and `args=` lines about how it was started and exits with 7.
+    func makeFakeClaude() throws -> URL {
+        let dir = home.appendingPathComponent("fake-bin")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        #if os(Windows)
+        // A batch file, the way npm installs claude.
+        let script = ["@echo off", "echo config=%CLAUDE_CONFIG_DIR%", "echo args=%*", "exit /b 7", ""]
+        try script.joined(separator: "\r\n").write(to: dir.appendingPathComponent("claude.cmd"),
+                                                   atomically: true, encoding: .utf8)
+        #else
+        let fake = dir.appendingPathComponent("claude")
+        try """
+        #!/bin/sh
+        echo "config=${CLAUDE_CONFIG_DIR:-}"
+        printf 'args='; printf '%s|' "$@"; echo
+        exit 7
+        """.write(to: fake, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+        #endif
+        return dir
+    }
+
+    /// Runs `executable` with exactly `environment`, and collects its exit
+    /// code and the `key=value` lines it printed.
+    func run(_ executable: URL, _ arguments: [String],
+             _ environment: [String: String]) throws -> (status: Int32, output: [String: String]) {
+        let p = Process()
+        p.executableURL = executable
+        p.arguments = arguments
+        p.environment = environment
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        try p.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        var output: [String: String] = [:]
+        for line in String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            guard let equals = line.firstIndex(of: "=") else { continue }
+            output[String(line[..<equals])] = String(line[line.index(after: equals)...])
+        }
+        return (p.terminationStatus, output)
     }
 }
