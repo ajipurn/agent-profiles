@@ -143,6 +143,23 @@ public final class CLIProfileManager: Sendable {
     }
 
     #if os(Windows)
+    /// The Windows side of `pathLine`: `claude` in a terminal reaches the shim
+    /// only while the shim's folder is on PATH ahead of the real claude's, so
+    /// it goes first on the user's PATH, where Claude Code's installer puts
+    /// its own folder too. `key` is for tests.
+    public func isOnUserPath(key: String = UserPath.environmentKey) -> Bool {
+        UserPath.contains(shim.deletingLastPathComponent(), key: key)
+    }
+
+    /// Terminals opened from then on use the shim; open ones keep their PATH.
+    public func addToUserPath(key: String = UserPath.environmentKey) throws {
+        try UserPath.add(shim.deletingLastPathComponent(), key: key)
+    }
+
+    public func removeFromUserPath(key: String = UserPath.environmentKey) throws {
+        try UserPath.remove(shim.deletingLastPathComponent(), key: key)
+    }
+
     /// Built from Sources/ClaudeLauncher and shipped beside the program's own
     /// executable (for tests, the test runner in the build folder).
     static var bundledLauncher: URL {

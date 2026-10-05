@@ -1,6 +1,9 @@
 import Foundation
 import Testing
 @testable import ClaudeProfilesCore
+#if os(Windows)
+@testable import PlatformSupport
+#endif
 
 final class CLIProfileManagerTests {
     let fm = FileManager.default
@@ -126,6 +129,24 @@ final class CLIProfileManagerTests {
         let result = try run(cli.shim, ["/d", "/c", "echo config=%CLAUDE_CONFIG_DIR%& exit 5"], environment(path: path))
         #expect(result.status == 5)
         #expect(samePath(result.output["config"], cli.profilesDir.appendingPathComponent("work")))
+    }
+
+    /// The shim's folder goes first on the user's PATH and comes off again,
+    /// leaving the rest as it was. A scratch key stands in for the real one.
+    @Test func testUserPathSetupPutsShimFolderFirst() throws {
+        let key = #"Software\AgentProfilesTests-"# + UUID().uuidString
+        defer { Win32.deleteRegistryKey(key) }
+        try Win32.setRegistryString(#"%USERPROFILE%\.local\bin"#, key: key, value: "Path")
+        #expect(!cli.isOnUserPath(key: key))
+
+        try cli.addToUserPath(key: key)
+        #expect(cli.isOnUserPath(key: key))
+        let bin = nativePath(cli.shim.deletingLastPathComponent())
+        #expect(try UserPath.read(key: key) == bin + #";%USERPROFILE%\.local\bin"#)
+
+        try cli.removeFromUserPath(key: key)
+        #expect(!cli.isOnUserPath(key: key))
+        #expect(try UserPath.read(key: key) == #"%USERPROFILE%\.local\bin"#)
     }
     #endif
 

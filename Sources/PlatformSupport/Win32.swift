@@ -130,5 +130,86 @@ enum Win32 {
         }
         guard removed else { throw lastError(path) }
     }
+
+    // MARK: - Registry (HKEY_CURRENT_USER only)
+
+    /// HKEY_CURRENT_USER: (HKEY)(ULONG_PTR)(LONG)0x80000001, sign-extended.
+    static var currentUser: HKEY? { HKEY(bitPattern: UInt(bitPattern: Int(Int32(bitPattern: 0x8000_0001)))) }
+    static let keyQueryValue: DWORD = 0x0001
+    static let keySetValue: DWORD = 0x0002
+    static let typeString: DWORD = 1 // REG_SZ
+    static let typeExpandableString: DWORD = 2 // REG_EXPAND_SZ
+    static let errorSuccess: LSTATUS = 0
+    static let errorFileNotFound: LSTATUS = 2
+    static let errorInvalidData: LSTATUS = 13
+
+    static func registryError(_ status: LSTATUS, _ key: String) -> PlatformError {
+        .windows(code: UInt32(bitPattern: status), path: #"HKEY_CURRENT_USER\"# + key)
+    }
+
+    /// A string value under HKEY_CURRENT_USER\`key`, as stored (%VARIABLES%
+    /// unexpanded); nil when the value or the key is missing.
+    static func registryString(key: String, value name: String) throws -> String? {
+        var handle: HKEY? = nil
+        var status = key.withCString(encodedAs: UTF16.self) {
+            RegOpenKeyExW(currentUser, $0, 0, keyQueryValue, &handle)
+        }
+        if status == errorFileNotFound { return nil }
+        guard status == errorSuccess, let handle else { throw registryError(status, key) }
+        defer { _ = RegCloseKey(handle) }
+
+        var type: DWORD = 0
+        var size: DWORD = 0
+        status = name.withCString(encodedAs: UTF16.self) { RegQueryValueExW(handle, $0, nil, &type, nil, &size) }
+        if status == errorFileNotFound { return nil }
+        guard status == errorSuccess else { throw registryError(status, key) }
+        guard type == typeString || type == typeExpandableString else { throw registryError(errorInvalidData, key) }
+
+        var units = [WCHAR](repeating: 0, count: Int(size) / 2 + 1)
+        status = name.withCString(encodedAs: UTF16.self) { valueName in
+            units.withUnsafeMutableBytes {
+                RegQueryValueExW(handle, valueName, nil, &type, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size)
+            }
+        }
+        guard status == errorSuccess else { throw registryError(status, key) }
+        return String(decoding: units[..<(units.firstIndex(of: 0) ?? units.count)], as: UTF16.self)
+    }
+
+    /// Stores `text` as REG_EXPAND_SZ, the type Windows gives the user's
+    /// Path, creating the key if needed.
+    static func setRegistryString(_ text: String, key: String, value name: String) throws {
+        var handle: HKEY? = nil
+        var status = key.withCString(encodedAs: UTF16.self) {
+            RegCreateKeyExW(currentUser, $0, 0, nil, 0, keySetValue, nil, &handle, nil)
+        }
+        guard status == errorSuccess, let handle else { throw registryError(status, key) }
+        defer { _ = RegCloseKey(handle) }
+
+        let units = Array(text.utf16) + [0]
+        status = name.withCString(encodedAs: UTF16.self) { valueName in
+            units.withUnsafeBytes {
+                RegSetValueExW(handle, valueName, 0, typeExpandableString,
+                               $0.baseAddress?.assumingMemoryBound(to: BYTE.self), DWORD($0.count))
+            }
+        }
+        guard status == errorSuccess else { throw registryError(status, key) }
+    }
+
+    /// Removes HKEY_CURRENT_USER\`key` with everything in it.
+    static func deleteRegistryKey(_ key: String) {
+        _ = key.withCString(encodedAs: UTF16.self) { RegDeleteTreeW(currentUser, $0) }
+    }
+
+    /// Tells running programs, Explorer above all (it starts new terminals),
+    /// that the environment changed, so what they start next gets the new
+    /// PATH. Programs that hang are skipped after a moment.
+    static func announceEnvironmentChange() {
+        let settingChange: UINT = 0x001A // WM_SETTINGCHANGE
+        let abortIfHung: UINT = 0x0002 // SMTO_ABORTIFHUNG
+        _ = "Environment".withCString(encodedAs: UTF16.self) { area in
+            SendMessageTimeoutW(HWND(bitPattern: 0xFFFF), settingChange, 0, LPARAM(Int(bitPattern: area)),
+                                abortIfHung, 5000, nil)
+        }
+    }
 }
 #endif

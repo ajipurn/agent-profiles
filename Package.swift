@@ -10,7 +10,14 @@ var dependencies: [Package.Dependency] = []
 var targets: [Target] = [
     // Paths, links, file modes and locks that differ per OS — the one place
     // the cores below spell out a platform.
-    .target(name: "PlatformSupport"),
+    .target(
+        name: "PlatformSupport",
+        linkerSettings: [
+            // The registry (the user's PATH) and the broadcast that announces it.
+            .linkedLibrary("advapi32", .when(platforms: [.windows])),
+            .linkedLibrary("user32", .when(platforms: [.windows])),
+        ]
+    ),
     // Vendored zstd 1.5.7 (decompress side only, BSD) — Claude Desktop's
     // HTTP cache stores response bodies zstd-compressed and macOS ships no
     // system decoder. Assembly is skipped for portability.
