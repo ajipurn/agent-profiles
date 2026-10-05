@@ -80,7 +80,12 @@ The panel follows [OpenUsage](https://github.com/robinebers/openusage)'s design:
 - **Settings window:** General (menu bar, launch at login, updates), Claude
   (profiles, Desktop and CLI switching, rename, delete, order, shared session
   history, CLI setup), Codex (accounts, favorites, rename, remove, sign-in,
-  options), About.
+  options), History, About.
+- **History:** how each account's session or weekly limit filled over the
+  last 7 or 30 days, one line per account, from readings the app keeps while
+  it runs (at most one per account every ten minutes, 30 days, on this Mac
+  only). Hover for the values at a moment; the table below gives each
+  account's latest, peak and how often the limit reached 100%.
 
 Everything both old apps did is still there.
 
@@ -115,7 +120,7 @@ No sign-in step for sessions that are already on the Mac:
   | `agentprofiles://claude/<name>` | switches Claude Desktop |
   | `agentprofiles://claude-cli/<name>` | switches the Claude Code profile (`Default` = plain `~/.claude`) |
   | `agentprofiles://codex/<name>` | switches Codex (saved name, label or email) |
-  | `agentprofiles://open[/<pane>]` | opens Settings (`general`, `claude`, `codex`, `about`) |
+  | `agentprofiles://open[/<pane>]` | opens Settings (`general`, `claude`, `codex`, `history`, `about`) |
 
   Claude Profiles' `claudeprofiles://switch|switch-cli|open` still work.
 - **Notifications:** a switch started from the menu, a hotkey or a URL
@@ -142,11 +147,13 @@ Sources/CZstd/                  vendored zstd, decompress only (BSD)   ← claud
 Sources/ClaudeProfilesCore/     Claude profile logic, no UI            ← claude-profiles
 Sources/CodexProfilesCore/      Codex profile logic, no UI             ← codex-profiles
 Sources/UsageCostCore/          cost estimate from local logs, no UI
+Sources/UsageHistoryCore/       a month of usage readings for History, no UI
 Sources/AgentUI/                panel cards, bars, cost ring, switcher, menu bar icon (shared)
 Sources/CodexProfilesUI/        Codex model, settings pane, updater    ← codex-profiles
 Sources/AgentProfiles/          app shell, panel, Settings, Claude pane ← claude-profiles
 Tests/ClaudeProfilesCoreTests/  Swift Testing (ported from XCTest)
 Tests/UsageCostCoreTests/       Swift Testing
+Tests/UsageHistoryCoreTests/    Swift Testing
 Tests/CodexProfilesCheck/       plain executable checks
 ```
 

@@ -32,6 +32,8 @@ var targets: [Target] = [
     // Estimated spend from local Claude Code and Codex logs, priced with
     // a generated LiteLLM snapshot (scripts/update-pricing.py).
     .target(name: "UsageCostCore", dependencies: ["PlatformSupport"]),
+    // Usage readings over the last month, for Settings → History.
+    .target(name: "UsageHistoryCore", dependencies: ["PlatformSupport"]),
     // Codex regression checks: a plain executable, so they run without XCTest.
     .executableTarget(
         name: "CodexProfilesCheck",
@@ -45,6 +47,10 @@ var targets: [Target] = [
     .testTarget(
         name: "UsageCostCoreTests",
         dependencies: ["UsageCostCore"]
+    ),
+    .testTarget(
+        name: "UsageHistoryCoreTests",
+        dependencies: ["UsageHistoryCore"]
     ),
     // Claude core tests (Swift Testing — runs on Command Line Tools too).
     .testTarget(
@@ -72,7 +78,8 @@ targets += [
     // screens directly and the Codex ones from CodexProfilesUI.
     .executableTarget(
         name: "AgentProfiles",
-        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore"],
+        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore",
+                       "UsageHistoryCore"],
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("SwiftUI"),
