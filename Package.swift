@@ -2,14 +2,22 @@
 
 import PackageDescription
 
-// The cores build everywhere (Linux CI today, Windows next); the app shell,
-// its AppKit/SwiftUI UI and Sparkle only exist on macOS.
+// The cores build everywhere (CI tests them on Windows too); the app shell,
+// its AppKit/SwiftUI UI and Sparkle only exist on macOS, and the claude
+// launcher only on Windows.
 var products: [Product] = []
 var dependencies: [Package.Dependency] = []
 var targets: [Target] = [
     // Paths, links, file modes and locks that differ per OS — the one place
     // the cores below spell out a platform.
-    .target(name: "PlatformSupport"),
+    .target(
+        name: "PlatformSupport",
+        linkerSettings: [
+            // The registry (the user's PATH) and the broadcast that announces it.
+            .linkedLibrary("advapi32", .when(platforms: [.windows])),
+            .linkedLibrary("user32", .when(platforms: [.windows])),
+        ]
+    ),
     // Vendored zstd 1.5.7 (decompress side only, BSD) — Claude Desktop's
     // HTTP cache stores response bodies zstd-compressed and macOS ships no
     // system decoder. Assembly is skipped for portability.
@@ -52,6 +60,22 @@ var targets: [Target] = [
         dependencies: ["ClaudeProfilesCore", "PlatformSupport"]
     ),
 ]
+
+#if os(Windows)
+targets += [
+    // `claude.exe` and `claude-profile.exe` for Claude Code (CLI) profiles,
+    // copied into _cli\bin by CLIProfileManager. Plain C on Win32, linked
+    // without Swift's startup object, so the copies need no Swift runtime
+    // beside them.
+    .executableTarget(
+        name: "ClaudeLauncher",
+        linkerSettings: [
+            .linkedLibrary("shell32"),
+            .unsafeFlags(["-nostartfiles"]),
+        ]
+    ),
+]
+#endif
 
 #if os(macOS)
 products += [

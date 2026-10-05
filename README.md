@@ -142,6 +142,8 @@ Sources/CZstd/                  vendored zstd, decompress only (BSD)   ← claud
 Sources/ClaudeProfilesCore/     Claude profile logic, no UI            ← claude-profiles
 Sources/CodexProfilesCore/      Codex profile logic, no UI             ← codex-profiles
 Sources/UsageCostCore/          cost estimate from local logs, no UI
+Sources/PlatformSupport/        per-OS paths, links, file modes and locks
+Sources/ClaudeLauncher/         claude.exe and claude-profile.exe for Windows (C)
 Sources/AgentUI/                panel cards, bars, cost ring, switcher, menu bar icon (shared)
 Sources/CodexProfilesUI/        Codex model, settings pane, updater    ← codex-profiles
 Sources/AgentProfiles/          app shell, panel, Settings, Claude pane ← claude-profiles
