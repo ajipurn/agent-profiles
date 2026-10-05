@@ -51,6 +51,20 @@ var targets: [Target] = [
         name: "ClaudeProfilesCoreTests",
         dependencies: ["ClaudeProfilesCore", "PlatformSupport"]
     ),
+    // The `agent-profiles` command: status, usage, cost and switching from a
+    // terminal. Its logic lives in AgentCLI, where the tests drive it.
+    .target(
+        name: "AgentCLI",
+        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "UsageCostCore"]
+    ),
+    .executableTarget(name: "AgentProfilesCLI", dependencies: ["AgentCLI"]),
+    .testTarget(
+        name: "AgentCLITests",
+        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport"]
+    ),
+]
+products += [
+    .executable(name: "agent-profiles", targets: ["AgentProfilesCLI"]),
 ]
 
 #if os(macOS)
