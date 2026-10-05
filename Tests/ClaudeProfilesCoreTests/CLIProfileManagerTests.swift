@@ -222,7 +222,9 @@ final class CLIProfileManagerTests {
         environment["HOME"] = home.path
         #if os(Windows)
         for name in ["SystemRoot", "ComSpec"] { environment[name] = currentVariable(name) }
-        if let path { environment["PATH"] = path.joined(separator: ";") }
+        // Spelled "Path": when that exact key is missing, Foundation adds the
+        // test runner's own, and the child would see two PATHs.
+        if let path { environment["Path"] = path.joined(separator: ";") }
         #else
         if let path { environment["PATH"] = path.joined(separator: ":") }
         #endif

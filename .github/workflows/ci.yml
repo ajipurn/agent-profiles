@@ -51,7 +51,10 @@ jobs:
       - name: Run Codex checks
         run: swift run CodexProfilesCheck
       - name: Run Swift tests
-        run: swift test
+        # One test at a time: Foundation's Process on Windows hands every
+        # inheritable handle to the child, files other tests are writing
+        # included, and those can't be moved or deleted while it runs.
+        run: swift test --no-parallel
       - name: Smoke-test the Windows research script
         # Windows PowerShell 5.1, which is what most users will run it with.
         shell: powershell
