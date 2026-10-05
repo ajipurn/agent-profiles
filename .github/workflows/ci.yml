@@ -32,9 +32,9 @@ jobs:
           BUILD_ARCHS: arm64 x86_64
         run: ./scripts/package-app.sh debug
   windows-core:
-    # Only the cores exist off macOS (see Package.swift). Building them keeps
-    # the Windows port possible; their tests still lean on symlinks and the
-    # POSIX CLI shim, so they report without blocking until that layer lands.
+    # Only the cores and the claude launcher exist off macOS (see
+    # Package.swift). Building and testing them keeps the Windows port honest
+    # until it has an app of its own.
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -49,10 +49,8 @@ jobs:
       - name: Build the cores
         run: swift build --build-tests
       - name: Run Codex checks
-        continue-on-error: true
         run: swift run CodexProfilesCheck
       - name: Run Swift tests
-        continue-on-error: true
         run: swift test
       - name: Smoke-test the Windows research script
         # Windows PowerShell 5.1, which is what most users will run it with.
