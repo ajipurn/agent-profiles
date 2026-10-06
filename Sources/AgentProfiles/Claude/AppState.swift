@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ClaudeProfilesCore
+import UsageHistoryCore
 
 @MainActor
 final class AppState: ObservableObject {
@@ -31,6 +32,8 @@ final class AppState: ObservableObject {
     /// any SwiftUI scene, so opening the main window goes through this hook
     /// (set by the app delegate) instead of @Environment(\.openWindow).
     var openWindowHandler: (() -> Void)?
+    /// Where each usage scan leaves its readings, for Settings → History.
+    var history: UsageHistory?
 
     /// `home` and `demo` exist for preview mode: a throwaway home directory
     /// and a Claude controller that never quits or relaunches the real app.
@@ -204,6 +207,10 @@ final class AppState: ObservableObject {
                 self.usageScanRunning = false
                 self.lastUsageScan = Date()
                 self.notifyIfActiveNearlyOut()
+                if let history = self.history {
+                    let samples = map.map { UsageSample.claude($0.key, $0.value) }
+                    Task { await history.record(samples) }
+                }
             }
         }
     }

@@ -19,6 +19,11 @@ The two providers work differently, and so does what the app touches for each.
 - Codex usage is requested from `chatgpt.com`; token refreshes use `auth.openai.com`. These requests use the relevant account's credentials.
 - Adding an account runs the installed Codex CLI's normal sign-in in Terminal.
 
+## Usage history
+
+- Settings → History and `agent-profiles history` draw from readings the app keeps while it runs: each account's used share of its session and weekly limits, at most one every ten minutes per account. They are the same numbers the menu already shows, keyed by Claude profile name or Codex account id, with no tokens or account details.
+- They are stored in `~/Library/Application Support/AgentProfiles/usage-history.jsonl`, never sent anywhere, and dropped after 30 days. Deleting the file clears the history.
+
 ## App updates
 
 Update checks and downloads use GitHub and its release-asset infrastructure. GitHub receives normal connection information, including your IP address. No account credentials or profile data are sent. Automatic update checks can be turned off in Settings; automatic installation is opt-in.
