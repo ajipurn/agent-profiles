@@ -57,16 +57,17 @@ var targets: [Target] = [
         name: "ClaudeProfilesCoreTests",
         dependencies: ["ClaudeProfilesCore", "PlatformSupport"]
     ),
-    // The `agent-profiles` command: status, usage, cost and switching from a
-    // terminal. Its logic lives in AgentCLI, where the tests drive it.
+    // The `agent-profiles` command: status, usage, cost, history and
+    // switching from a terminal. Its logic lives in AgentCLI, where the
+    // tests drive it.
     .target(
         name: "AgentCLI",
-        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "UsageCostCore"]
+        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "UsageCostCore", "UsageHistoryCore"]
     ),
     .executableTarget(name: "AgentProfilesCLI", dependencies: ["AgentCLI"]),
     .testTarget(
         name: "AgentCLITests",
-        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport"]
+        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport", "UsageHistoryCore"]
     ),
 ]
 products += [

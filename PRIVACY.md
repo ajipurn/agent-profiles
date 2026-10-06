@@ -21,7 +21,7 @@ The two providers work differently, and so does what the app touches for each.
 
 ## Usage history
 
-- Settings → History draws from readings the app keeps while it runs: each account's used share of its session and weekly limits, at most one every ten minutes per account. They are the same numbers the menu already shows, keyed by Claude profile name or Codex account id, with no tokens or account details.
+- Settings → History and `agent-profiles history` draw from readings the app keeps while it runs: each account's used share of its session and weekly limits, at most one every ten minutes per account. They are the same numbers the menu already shows, keyed by Claude profile name or Codex account id, with no tokens or account details.
 - They are stored in `~/Library/Application Support/AgentProfiles/usage-history.jsonl`, never sent anywhere, and dropped after 30 days. Deleting the file clears the history.
 
 ## App updates

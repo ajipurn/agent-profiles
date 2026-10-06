@@ -67,7 +67,9 @@ public enum CLI {
     public static func run(_ arguments: [String], context: Context) async -> Int32 {
         var words: [String] = []
         var json = false, wait = true, help = false, positionalOnly = false
-        for argument in arguments {
+        var days: Int?
+        var rest = arguments[...]
+        while let argument = rest.popFirst() {
             if positionalOnly || !argument.hasPrefix("-") || argument == "-" {
                 words.append(argument)
                 continue
@@ -77,6 +79,9 @@ public enum CLI {
             case "--no-wait": wait = false
             case "-h", "--help": help = true
             case "--": positionalOnly = true // names that start with a dash come after it
+            // Anything but a number in range is caught below.
+            case "--days": days = rest.popFirst().flatMap { Int($0) } ?? 0
+            case _ where argument.hasPrefix("--days="): days = Int(argument.dropFirst("--days=".count)) ?? 0
             default: return fail(.usage("unknown option \(argument)"), context)
             }
         }
@@ -85,6 +90,12 @@ public enum CLI {
             return 0
         }
         if words.isEmpty { words = ["status"] }
+        if let days {
+            guard words[0] == "history" else { return fail(.usage("--days only goes with history"), context) }
+            guard Commands.historyDays.contains(days) else {
+                return fail(.usage("--days takes a number of days from 1 to \(Commands.historyDays.upperBound)"), context)
+            }
+        }
 
         let commands = Commands(context: context, json: json)
         do {
@@ -93,9 +104,10 @@ public enum CLI {
             case ("list", 1...2): try commands.list(try words.dropFirst().first.map(provider))
             case ("usage", 1...2): try await commands.usage(try words.dropFirst().first.map(provider))
             case ("cost", 1): await commands.cost()
+            case ("history", 1...2): try await commands.history(try words.dropFirst().first.map(provider), days: days ?? 7)
             case ("switch", 3): try await commands.switchTo(try provider(words[1]), name: words[2], wait: wait)
             case ("switch", _): throw CLIError.usage("switch takes a provider and a name, e.g. switch claude work")
-            case (let command, _) where ["status", "list", "usage", "cost"].contains(command):
+            case (let command, _) where ["status", "list", "usage", "cost", "history"].contains(command):
                 throw CLIError.usage("too many arguments for \(command)")
             case (let command, _): throw CLIError.usage("unknown command \(command)")
             }
@@ -136,6 +148,10 @@ public enum CLI {
                                 active Codex account's usage, fetched now
       cost                      estimated cost today, yesterday and over 30 days,
                                 from local Claude Code and Codex logs
+      history [claude|codex] [--days N]
+                                each account's peaks over the last N days (7 unless
+                                given, up to 30) and how often a limit filled up,
+                                from the readings the app keeps while it runs
       switch claude|claude-cli|codex <name>
                                 switch through the Agent Profiles app and wait until
                                 it is done (--no-wait returns right away)

@@ -4,6 +4,7 @@ import Testing
 import ClaudeProfilesCore
 import CodexProfilesCore
 import PlatformSupport
+import UsageHistoryCore
 
 /// Every test gets its own home: Claude Desktop profiles "personal" and
 /// "work" (active), and two saved Codex accounts with me@example.com live.
@@ -141,6 +142,81 @@ final class AgentCLITests {
         #expect(cost["yesterday"] != nil && cost["last30Days"] != nil)
     }
 
+    // MARK: - History
+
+    /// Readings as the app would have kept them, `hours` before now.
+    func record(_ readings: [(provider: UsageSample.Provider, account: String, hours: Double,
+                              session: Double?, weekly: Double?)]) async throws {
+        let now = Date()
+        try await UsageHistory(home: home).replace(with: readings.map {
+            UsageSample(provider: $0.provider, account: $0.account, at: now.addingTimeInterval(-$0.hours * 3600),
+                        session: $0.session, weekly: $0.weekly)
+        })
+    }
+
+    @Test func historySummarizesEachAccountInTheAppsOrder() async throws {
+        try setUpClaude()
+        try await record([
+            (.claude, "work", 72, 40, 20),
+            (.claude, "work", 48, 100, 50),
+            (.claude, "work", 47.5, 100, 55), // still full: counted once
+            (.claude, "work", 24, 30, 60),
+            (.claude, "work", 240, 100, 90), // ten days ago: outside the default week
+            (.claude, "old", 30, 10, 5), // a profile since removed
+        ])
+        let result = await run(["history", "claude"])
+        #expect(result.code == 0)
+        #expect(result.out == """
+            Account        Weekly peak  Weekly full  Session peak  Session full  Last reading
+            personal       no readings
+            work                   60%            –          100%            1×  1d ago
+            old (removed)           5%            –           10%             –  1d 6h ago
+            """)
+    }
+
+    @Test func historyAsJSONCoversTheDaysAsked() async throws {
+        try setUpCodex()
+        let saved = try AccountSwitcher(paths: paths, clients: NullCodexClients()).profiles()
+        let me = try #require(saved.first { $0.matches("me@example.com") }).id.uuidString
+        let team = try #require(saved.first { $0.matches("team@example.com") }).id.uuidString
+        let gone = UUID().uuidString
+        try await record([
+            (.codex, me, 240, 100, 80),
+            (.codex, me, 2, 20, 85),
+            (.codex, gone, 5, 50, nil),
+        ])
+        func accounts(_ arguments: [String]) async throws -> [[String: Any]] {
+            let out = await run(arguments).out
+            return try #require(try JSONSerialization.jsonObject(with: Data(out.utf8)) as? [[String: Any]])
+        }
+
+        let month = try await accounts(["history", "codex", "--days", "30", "--json"])
+        let goneName = "Removed account \(gone.prefix(4))"
+        #expect(month.map { $0["name"] as? String } == ["me@example.com", "team@example.com", goneName])
+        #expect(month.map { flag($0["removed"]) } == [false, false, true])
+        #expect(month.map { $0["id"] as? String } == [me, team, gone])
+        let session = month[0]["session"] as? [String: Any], weekly = month[0]["weekly"] as? [String: Any]
+        #expect(number(session?["timesFull"]) == 1)
+        #expect(number(session?["latest"]) == 20)
+        #expect(number(weekly?["peak"]) == 85)
+        #expect((month[0]["readings"] as? [[String: Any]])?.count == 2)
+        #expect((month[1]["readings"] as? [[String: Any]])?.isEmpty == true)
+        #expect(month[1]["lastReading"] is NSNull)
+        #expect(number((month[2]["weekly"] as? [String: Any])?["peak"]) == nil) // never reported
+
+        // The default week leaves the ten-day-old full session out.
+        let week = try await accounts(["history", "codex", "--days=7", "--json"])
+        #expect(number((week[0]["session"] as? [String: Any])?["timesFull"]) == 0)
+    }
+
+    @Test func historyWithoutReadingsSaysHowTheyCome() async throws {
+        try setUpClaude()
+        let result = await run(["history"])
+        #expect(result.code == 0)
+        #expect(result.out.hasPrefix("Claude Desktop, last 7 days\nAccount"))
+        #expect(result.out.hasSuffix("No readings yet: the Agent Profiles app keeps one every ten minutes at most while it runs."))
+    }
+
     // MARK: - Switching
 
     @Test func claudeSwitchGoesThroughTheAppAndWaits() async throws {
@@ -234,6 +310,10 @@ final class AgentCLITests {
         #expect(await run(["switch", "claude"]).code == 2)
         #expect(await run(["list", "gemini"]).code == 2)
         #expect(await run(["usage", "claude-cli"]).code == 2)
+        #expect(await run(["history", "claude-cli"]).code == 2)
+        #expect(await run(["history", "--days", "31"]).code == 2)
+        #expect(await run(["history", "--days"]).code == 2)
+        #expect(await run(["status", "--days", "7"]).code == 2)
         let help = await run(["--help"])
         #expect(help.code == 0)
         #expect(help.out.hasPrefix("usage: agent-profiles"))

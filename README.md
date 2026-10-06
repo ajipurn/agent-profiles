@@ -136,6 +136,7 @@ No sign-in step for sessions that are already on the Mac:
   | `agent-profiles list [claude\|claude-cli\|codex]` | profiles and accounts, `*` on the active ones |
   | `agent-profiles usage [claude\|codex]` | Claude Desktop usage as Claude last saw it; the active Codex account's usage, fetched now |
   | `agent-profiles cost` | the estimated cost, as in the panel |
+  | `agent-profiles history [claude\|codex] [--days N]` | each account's peaks over the last 7 days (up to 30) and how often a limit filled up, from the readings behind Settings → History; `--json` adds every reading |
   | `agent-profiles switch claude\|claude-cli\|codex <name>` | switches through the app, like the URLs above, and waits until it is done (`--no-wait` doesn't) |
 
   Add `--json` for scripts and status lines. Reading needs nothing running;
