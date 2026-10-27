@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057 # v0.5.0
+      - uses: compnerd/gha-setup-swift@9ff1ee4c44888c5817fc14d1b257ac8cabb4935f # v0.5.1
         with:
           # swift.org names this release 6.4.0; the 6.4 paths 404.
           swift-version: swift-6.4.0-release
