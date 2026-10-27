@@ -26,6 +26,13 @@ public struct Profile: Equatable, Sendable, Identifiable, Codable {
         Self.resolvedName(stored: name, identity: identity)
     }
 
+    /// Whether `query` names this account: its saved name, the name shown for
+    /// it or its email, ignoring case. The URL scheme and the command line
+    /// both switch by it.
+    public func matches(_ query: String) -> Bool {
+        !query.isEmpty && [name, displayName, identity?.email].contains { $0?.caseInsensitiveCompare(query) == .orderedSame }
+    }
+
     public static func resolvedName(stored: String, identity: AccountIdentity?) -> String {
         guard let email = identity?.email, looksLikeEmail(stored), looksLikeEmail(email),
               stored.caseInsensitiveCompare(email) != .orderedSame

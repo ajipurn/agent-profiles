@@ -32,6 +32,8 @@ var targets: [Target] = [
     // Estimated spend from local Claude Code and Codex logs, priced with
     // a generated LiteLLM snapshot (scripts/update-pricing.py).
     .target(name: "UsageCostCore", dependencies: ["PlatformSupport"]),
+    // Usage readings over the last month, for Settings → History.
+    .target(name: "UsageHistoryCore", dependencies: ["PlatformSupport"]),
     // Codex regression checks: a plain executable, so they run without XCTest.
     .executableTarget(
         name: "CodexProfilesCheck",
@@ -46,11 +48,30 @@ var targets: [Target] = [
         name: "UsageCostCoreTests",
         dependencies: ["UsageCostCore"]
     ),
+    .testTarget(
+        name: "UsageHistoryCoreTests",
+        dependencies: ["UsageHistoryCore"]
+    ),
     // Claude core tests (Swift Testing — runs on Command Line Tools too).
     .testTarget(
         name: "ClaudeProfilesCoreTests",
         dependencies: ["ClaudeProfilesCore", "PlatformSupport"]
     ),
+    // The `agent-profiles` command: status, usage, cost, history and
+    // switching from a terminal. Its logic lives in AgentCLI, where the
+    // tests drive it.
+    .target(
+        name: "AgentCLI",
+        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "UsageCostCore", "UsageHistoryCore"]
+    ),
+    .executableTarget(name: "AgentProfilesCLI", dependencies: ["AgentCLI"]),
+    .testTarget(
+        name: "AgentCLITests",
+        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport", "UsageHistoryCore"]
+    ),
+]
+products += [
+    .executable(name: "agent-profiles", targets: ["AgentProfilesCLI"]),
 ]
 
 #if os(macOS)
@@ -72,7 +93,8 @@ targets += [
     // screens directly and the Codex ones from CodexProfilesUI.
     .executableTarget(
         name: "AgentProfiles",
-        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore"],
+        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore",
+                       "UsageHistoryCore"],
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("SwiftUI"),

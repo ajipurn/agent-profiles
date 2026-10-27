@@ -78,10 +78,7 @@ extension AppModel {
 
     /// A saved account whose name, label or email is `name` (any case).
     public func accountID(matching name: String) -> String? {
-        profiles.first { profile in
-            [profile.name, profile.displayName, profile.identity?.email ?? ""]
-                .contains { $0.caseInsensitiveCompare(name) == .orderedSame }
-        }?.id.uuidString
+        profiles.first { $0.matches(name) }?.id.uuidString
     }
 
     public func accountName(_ accountID: String) -> String? {
