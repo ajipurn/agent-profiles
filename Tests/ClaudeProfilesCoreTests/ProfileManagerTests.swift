@@ -555,6 +555,55 @@ final class ProfileManagerTests {
         }
     }
 
+    /// #11: a profile renamed after the backup still gets its own sessions back.
+    @Test func testRestoreFindsRenamedProfileByAccount() throws {
+        try seedTwoProfiles()
+        let code = ProfileManager.sessionTrees[0]
+        let backup = try #require(try pm.enableSharedHistory())
+        try pm.renameProfile("b", to: "office")
+        // The login record names b's account, as Claude writes it.
+        try write(#"{"ownerAccountId":"acct2"}"#, to: profile("office").appendingPathComponent("cowork-enabled-cli-ops.json"))
+
+        let result = try pm.restoreFromBackup(backup)
+
+        #expect(result.renamed == ["office": "b"])
+        let officeOrg = profile("office").appendingPathComponent("\(code)/acct2/org2")
+        #expect(try fm.contentsOfDirectory(atPath: officeOrg.path) == ["local_3.json"])
+        #expect(try fm.contentsOfDirectory(atPath: profile("a").appendingPathComponent("\(code)/acct1/org1").path).sorted()
+            == ["local_1.json", "local_2.json"])
+    }
+
+    /// Without a recorded account, the one renamed profile still pairs with
+    /// the one leftover folder.
+    @Test func testRestorePairsLoneRenameWithoutAccountRecord() throws {
+        try seedTwoProfiles()
+        let backup = try #require(try pm.enableSharedHistory())
+        try pm.renameProfile("b", to: "office")
+
+        let result = try pm.restoreFromBackup(backup)
+
+        #expect(result.renamed == ["office": "b"])
+        #expect(fm.fileExists(atPath: profile("office")
+            .appendingPathComponent("\(ProfileManager.sessionTrees[0])/acct2/org2/local_3.json").path))
+    }
+
+    /// A name reused after a rename must not inherit the old owner's sessions.
+    @Test func testRestoreSkipsReusedNameOfAnotherAccount() throws {
+        try seedTwoProfiles()
+        let code = ProfileManager.sessionTrees[0]
+        let backup = try #require(try pm.enableSharedHistory())
+        try pm.renameProfile("b", to: "office")
+        try write(#"{"ownerAccountId":"acct2"}"#, to: profile("office").appendingPathComponent("cowork-enabled-cli-ops.json"))
+        try pm.createProfile(name: "b")
+        try write(#"{"ownerAccountId":"acct9"}"#, to: profile("b").appendingPathComponent("cowork-enabled-cli-ops.json"))
+
+        let result = try pm.restoreFromBackup(backup)
+
+        #expect(result.renamed == ["office": "b"])
+        #expect(try fm.contentsOfDirectory(atPath: profile("b").appendingPathComponent(code).path) == [])
+        #expect(fm.fileExists(atPath: profile("office").appendingPathComponent("\(code)/acct2/org2/local_3.json").path))
+    }
+
     @Test func testRestoreRejectsInvalidBackup() throws {
         try seedTwoProfiles()
         try pm.enableSharedHistory()
