@@ -110,6 +110,19 @@ public struct UsageAccount: Equatable, Sendable, Identifiable {
     /// Remaining share of the session window, 0–100.
     public var remaining: Double? { session?.remaining }
 
+    /// The one account with more left than every other (and well clear, over
+    /// 40%), worth a "Most left" mark. None when several tie — all at 100%,
+    /// say — or only one is listed. Compared as the whole percents the panel
+    /// shows, so two accounts that both read "100%" tie.
+    public static func leader(in accounts: [UsageAccount]) -> UsageAccount? {
+        func shown(_ account: UsageAccount) -> Double? { account.usable?.rounded() }
+        guard accounts.count > 1,
+              let best = accounts.max(by: { (shown($0) ?? 0) < (shown($1) ?? 0) }),
+              let top = shown(best), top > 40 else { return nil }
+        let rest = accounts.filter { $0.id != best.id }.compactMap(shown)
+        return rest.allSatisfy({ $0 < top }) ? best : nil
+    }
+
     /// What this account can actually use now: the tighter of its two
     /// windows, since either one running out blocks it.
     public var usable: Double? {

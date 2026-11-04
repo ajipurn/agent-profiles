@@ -102,7 +102,9 @@ private struct OverviewRow: View {
                                     .font(.system(size: 10.5, weight: .medium))
                                     .monospacedDigit()
                                     .foregroundStyle(UsageTint.text(limit.level))
-                                    .frame(width: 30, alignment: .trailing)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .frame(minWidth: 34, alignment: .trailing)
                             }
                         }
                     }

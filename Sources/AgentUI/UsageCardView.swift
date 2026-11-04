@@ -447,11 +447,14 @@ private struct MiniMeter: View {
                 .frame(width: 15, alignment: .leading)
             UsageBar(remaining: limit?.remaining, tint: UsageTint.color(verdict), height: 4)
                 .frame(width: 64)
+            // One line always: "100%" wrapped to "100 / %" in the 1.4.0 release build.
             Text(UsageFormat.compact(limit?.remaining, showsUsed: showsUsed))
                 .font(.system(size: 10.5, weight: .medium))
                 .monospacedDigit()
                 .foregroundStyle(UsageTint.text(verdict))
-                .frame(width: 30, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: 34, alignment: .trailing)
         }
     }
 }

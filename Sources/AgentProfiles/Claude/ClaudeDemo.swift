@@ -10,7 +10,7 @@ enum ClaudeDemo {
         let manager = ProfileManager(home: home)
         // Percent of each window already used, like Claude's own /usage payload.
         let samples: [(name: String, fiveHour: Double, sevenDay: Double)] = [
-            ("personal", 42, 18), ("work", 91, 64), ("research", 12, 35),
+            ("personal", 42, 18), ("work", 91, 64), ("research", 12, 35), ("spare", 0, 0),
         ]
         do {
             try manager.migrate(name: samples[0].name) // the first one is active

@@ -64,6 +64,18 @@ import Testing
         #expect(UsageFormat.compact(nil, showsUsed: true) == "–")
     }
 
+    @Test func leaderOnlyWhenOneAccountLeads() {
+        func account(_ id: String, _ session: Double, _ weekly: Double) -> UsageAccount {
+            UsageAccount(id: id, title: id, session: UsageLimit(title: "Session", remaining: session),
+                         weekly: UsageLimit(title: "Weekly", remaining: weekly))
+        }
+        #expect(UsageAccount.leader(in: [account("a", 100, 100), account("b", 100, 100), account("c", 100, 100)]) == nil)
+        #expect(UsageAccount.leader(in: [account("a", 88, 65), account("b", 100, 100), account("c", 9, 36)])?.id == "b")
+        #expect(UsageAccount.leader(in: [account("a", 30, 90), account("b", 20, 100)]) == nil, "not well clear")
+        #expect(UsageAccount.leader(in: [account("a", 100, 100)]) == nil, "a lone account needs no mark")
+        #expect(UsageAccount.leader(in: [account("a", 99.6, 100), account("b", 100, 100)]) == nil, "both read 100%")
+    }
+
     @Test func accountUsableIsTheTighterWindow() {
         let account = UsageAccount(id: "a", title: "a", session: UsageLimit(title: "Session", remaining: 80),
                                    weekly: UsageLimit(title: "Weekly", remaining: 30))
