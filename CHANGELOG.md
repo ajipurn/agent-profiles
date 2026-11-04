@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1
+
+- Fixed "100%" wrapping onto two lines in Switch Account and the Overview tab; the meters stay aligned.
+- "Most left" now marks an account only when it has more left than every other one, so accounts that are all at 100% get no mark.
+
 ## 1.4.0
 
 - Switch Account shows each account's 5-hour and weekly limits side by side, sorted by what is left, with the account that has the most left marked.
