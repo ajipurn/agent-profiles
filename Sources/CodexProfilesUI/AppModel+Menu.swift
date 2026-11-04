@@ -18,9 +18,8 @@ extension AppModel {
             } else if let usage = liveUsage.usage {
                 card.subtitle = UsageFormat.updatedText(usage.fetchedAt)
                 card.limits = usage.windows.map(Self.limit)
-                if let credits = usage.creditsBalance {
-                    card.notice = "Credits: \(credits)"
-                }
+                    + usage.additional.map { Self.limit($0.window, title: $0.name) }
+                card.details = Self.details(usage)
             } else {
                 card.placeholder = liveUsage.isLoading ? "Loading usage…" : "No usage data yet."
             }
@@ -52,10 +51,12 @@ extension AppModel {
         )
         .filter { $0.id != live?.matchingProfileID }
         .map { profile in
-            UsageAccount(
+            let usage = profileUsage[profile.id]?.usage
+            return UsageAccount(
                 id: profile.id.uuidString,
                 title: displayName(for: profile),
-                remaining: profileUsage[profile.id]?.usage.flatMap(Self.sessionRemaining),
+                session: usage?.primary.map(Self.limit),
+                weekly: usage?.secondary.map(Self.limit),
                 isFavorite: settings.favoriteProfileIDs.contains(profile.id))
         }
     }
@@ -100,13 +101,36 @@ extension AppModel {
         let title = switch window.label {
         case "5h": "Session"
         case "Wk": "Weekly"
+        case "Limit": "Limit"
         default: "\(window.label) limit"
         }
-        return UsageLimit(title: title, remaining: window.remainingPercent, resetsAt: window.resetAt,
-                          window: window.windowSeconds.map(TimeInterval.init))
+        return limit(window, title: title)
     }
 
-    static func sessionRemaining(_ usage: CodexUsage) -> Double? {
-        (usage.windows.first { $0.label == "5h" } ?? usage.windows.first)?.remainingPercent
+    static func limit(_ window: UsageWindow, title: String) -> UsageLimit {
+        UsageLimit(title: title, remaining: window.remainingPercent, resetsAt: window.resetAt,
+                   window: window.windowSeconds.map(TimeInterval.init))
+    }
+
+    /// Credits (sold at 4¢ each), a workspace credit cap, and limit resets
+    /// waiting to be used.
+    static func details(_ usage: CodexUsage) -> [UsageDetail] {
+        var lines: [UsageDetail] = []
+        if let raw = usage.creditsBalance, let credits = Double(raw) {
+            let count = Int(credits.rounded(.down))
+            lines.append(UsageDetail(title: "Credits",
+                                     value: "\(count.formatted()) · ≈\(UsageFormat.money(Double(count) * 0.04))"))
+        } else if let raw = usage.creditsBalance {
+            lines.append(UsageDetail(title: "Credits", value: raw))
+        }
+        if let cap = usage.creditLimit {
+            lines.append(UsageDetail(title: "Credit limit",
+                                     value: "\(Int(cap.used).formatted()) of \(Int(cap.limit).formatted())",
+                                     used: min(100, 100 * cap.used / cap.limit)))
+        }
+        if let resets = usage.resetCredits, resets > 0 {
+            lines.append(UsageDetail(title: "Limit resets", value: "\(resets) available"))
+        }
+        return lines
     }
 }

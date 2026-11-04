@@ -1,0 +1,6 @@
+{
+  "projects": [
+    {"projectNumber": "111111111111", "projectId": "fake-unrelated-project", "lifecycleState": "ACTIVE", "name": "Unrelated"},
+    {"projectNumber": "222222222222", "projectId": "gen-lang-client-0123456789", "lifecycleState": "ACTIVE", "name": "Gemini API", "labels": {"generative-language": "enabled"}}
+  ]
+}

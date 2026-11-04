@@ -35,6 +35,13 @@ public struct Day: Hashable, Comparable, Sendable {
     }
 
     public static func < (lhs: Day, rhs: Day) -> Bool { lhs.value < rhs.value }
+
+    /// The last `count` days ending with the one holding `now`, oldest first.
+    public static func lastDays(_ count: Int, now: Date = Date(), calendar: Calendar = .current) -> [(Day, Date)] {
+        (0..<count).reversed().compactMap { back in
+            calendar.date(byAdding: .day, value: -back, to: now).map { (Day($0, calendar: calendar), $0) }
+        }
+    }
 }
 
 /// One priced-or-not request read from a log.
@@ -84,16 +91,52 @@ public struct CostAmount: Equatable, Sendable {
         self.dollars = dollars
         self.tokens = tokens
     }
+
+    mutating func add(_ dollars: Double, _ tokens: Int) {
+        self.dollars += dollars
+        self.tokens += tokens
+    }
 }
 
 /// Estimated spend per period and provider.
 public struct CostSummary: Equatable, Sendable {
     public var amounts: [CostPeriod: [CostProvider: CostAmount]] = [:]
+    /// The last 30 days, one entry per day with any priced use.
+    public var daily: [Day: [CostProvider: CostAmount]] = [:]
+    /// Spend per model and period, for the breakdown.
+    public var models: [CostPeriod: [ModelKey: CostAmount]] = [:]
+    /// Spend per model and day.
+    public var dailyModels: [Day: [ModelKey: CostAmount]] = [:]
     /// Models seen in the logs that no price covers; their tokens are left out.
     public var unpricedModels: Set<String> = []
     public var scannedAt: Date?
 
     public init() {}
+
+    /// A model as the logs name it, with its provider.
+    public struct ModelKey: Hashable, Sendable {
+        public var provider: CostProvider
+        public var model: String
+
+        public init(provider: CostProvider, model: String) {
+            self.provider = provider
+            self.model = model
+        }
+    }
+
+    /// Models by spend, most first.
+    public func topModels(_ period: CostPeriod, limit: Int = 5) -> [(ModelKey, CostAmount)] {
+        Self.ranked(models[period] ?? [:], limit: limit)
+    }
+
+    public func topModels(on day: Day, limit: Int = 5) -> [(ModelKey, CostAmount)] {
+        Self.ranked(dailyModels[day] ?? [:], limit: limit)
+    }
+
+    private static func ranked(_ map: [ModelKey: CostAmount], limit: Int) -> [(ModelKey, CostAmount)] {
+        Array(map.sorted { $0.value.dollars != $1.value.dollars ? $0.value.dollars > $1.value.dollars : $0.key.model < $1.key.model }
+            .prefix(limit))
+    }
 
     public func amount(_ period: CostPeriod, _ provider: CostProvider) -> CostAmount {
         amounts[period]?[provider] ?? CostAmount()
@@ -132,11 +175,15 @@ public struct CostSummary: Equatable, Sendable {
             }
             let dollars = modelPrice.cost(of: entry.tokens, tier: entry.tier, promptTokens: entry.promptTokens)
                 * entry.multiplier + Double(entry.webSearches) * Pricing.webSearchCost
+            let tokens = entry.tokens.total
+            let key = ModelKey(provider: entry.provider, model: entry.model)
             for period in CostPeriod.allCases
             where period.contains(entry.day, today: today, yesterday: yesterday, monthStart: monthStart) {
-                summary.amounts[period, default: [:]][entry.provider, default: CostAmount()].dollars += dollars
-                summary.amounts[period, default: [:]][entry.provider, default: CostAmount()].tokens += entry.tokens.total
+                summary.amounts[period, default: [:]][entry.provider, default: CostAmount()].add(dollars, tokens)
+                summary.models[period, default: [:]][key, default: CostAmount()].add(dollars, tokens)
             }
+            summary.daily[entry.day, default: [:]][entry.provider, default: CostAmount()].add(dollars, tokens)
+            summary.dailyModels[entry.day, default: [:]][key, default: CostAmount()].add(dollars, tokens)
         }
         return summary
     }

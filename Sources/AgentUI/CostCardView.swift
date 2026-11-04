@@ -17,13 +17,47 @@ public struct CostSlice: Identifiable, Equatable, Sendable {
 public struct CostPeriodData: Identifiable, Equatable, Sendable {
     public let title: String
     public let slices: [CostSlice]
+    /// Most expensive models in the period.
+    public let models: [CostModelLine]
     public var id: String { title }
     public var total: Double { slices.reduce(0) { $0 + $1.dollars } }
     public var tokens: Int { slices.reduce(0) { $0 + $1.tokens } }
 
-    public init(title: String, slices: [CostSlice]) {
+    public init(title: String, slices: [CostSlice], models: [CostModelLine] = []) {
         self.title = title
         self.slices = slices
+        self.models = models
+    }
+}
+
+/// One model's share of a period or day.
+public struct CostModelLine: Identifiable, Equatable, Sendable {
+    public let style: ProviderStyle
+    public let model: String
+    public let dollars: Double
+    public let tokens: Int
+    public var id: String { style.id + "/" + model }
+
+    public init(style: ProviderStyle, model: String, dollars: Double, tokens: Int) {
+        self.style = style
+        self.model = model
+        self.dollars = dollars
+        self.tokens = tokens
+    }
+}
+
+/// One day of the 30-day history.
+public struct CostDayData: Identifiable, Equatable, Sendable {
+    public let date: Date
+    public let slices: [CostSlice]
+    public let models: [CostModelLine]
+    public var id: Date { date }
+    public var total: Double { slices.reduce(0) { $0 + $1.dollars } }
+
+    public init(date: Date, slices: [CostSlice], models: [CostModelLine]) {
+        self.date = date
+        self.slices = slices
+        self.models = models
     }
 }
 
@@ -31,12 +65,16 @@ public struct CostPeriodData: Identifiable, Equatable, Sendable {
 /// total in the middle, and a legend.
 public struct CostCardView: View {
     let periods: [CostPeriodData]
+    let days: [CostDayData]
     let isLoading: Bool
     let note: String
     @AppStorage("costPeriod") private var selectedTitle = "Today"
+    @AppStorage("costHistoryShown") private var showsHistory = false
+    @State private var hoveredDay: Date?
 
-    public init(periods: [CostPeriodData], isLoading: Bool, note: String) {
+    public init(periods: [CostPeriodData], days: [CostDayData] = [], isLoading: Bool, note: String) {
         self.periods = periods
+        self.days = days
         self.isLoading = isLoading
         self.note = note
     }
@@ -56,15 +94,100 @@ public struct CostCardView: View {
                     .help(note)
                 Spacer(minLength: 8)
                 periodSwitcher
+                if !days.isEmpty {
+                    Button {
+                        withAnimation(.smooth(duration: 0.25)) { showsHistory.toggle() }
+                    } label: {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(showsHistory ? Color.accentColor : Color.secondary)
+                            .frame(width: 22, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(showsHistory ? "Hide daily history" : "Show daily history and top models")
+                }
             }
             HStack(spacing: 16) {
                 CostRing(slices: selected?.slices ?? [], total: selected?.total ?? 0, isLoading: isLoading)
                     .frame(width: 92, height: 92)
                 legend
             }
+            if showsHistory, !days.isEmpty {
+                history
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(14)
         .panelCard()
+    }
+
+    /// 30 days of stacked bars; hovering a day swaps the model list for
+    /// that day's.
+    private var history: some View {
+        let peak = max(days.map(\.total).max() ?? 0, 0.01)
+        let hovered = days.first { $0.date == hoveredDay }
+        return VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.6)
+            HStack(alignment: .firstTextBaseline) {
+                Text(hovered.map { $0.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) } ?? "Last 30 days")
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Text(CostFormat.dollars(hovered?.total ?? days.reduce(0) { $0 + $1.total }))
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(days) { day in
+                    VStack(spacing: 0) {
+                        ForEach(day.slices.reversed()) { slice in
+                            Rectangle()
+                                .fill(slice.style.accent)
+                                .frame(height: max(0, 46 * slice.dollars / peak))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 46, alignment: .bottom)
+                    .background(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 1.5).fill(Color.primary.opacity(day.total > 0 ? 0 : 0.06)).frame(height: 2)
+                    }
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, topTrailingRadius: 2))
+                    .opacity(hoveredDay == nil || hoveredDay == day.date ? 1 : 0.45)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { hoveredDay = day.date } else if hoveredDay == day.date { hoveredDay = nil }
+                    }
+                }
+            }
+            .frame(height: 46)
+            .animation(.easeOut(duration: 0.12), value: hoveredDay)
+            let models = hovered?.models ?? selected?.models ?? []
+            if !models.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(hovered == nil ? "Top models · \(selected?.title ?? "")" : "Top models")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(models.prefix(4)) { line in
+                        HStack(spacing: 6) {
+                            Circle().fill(line.style.accent).frame(width: 6, height: 6)
+                            Text(line.model)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 6)
+                            Text(CostFormat.tokens(line.tokens))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.tertiary)
+                                .monospacedDigit()
+                            Text(CostFormat.dollars(line.dollars))
+                                .font(.system(size: 11, weight: .medium))
+                                .monospacedDigit()
+                                .frame(minWidth: 48, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var periodSwitcher: some View {

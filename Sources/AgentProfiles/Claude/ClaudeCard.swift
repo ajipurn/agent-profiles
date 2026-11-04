@@ -22,9 +22,17 @@ extension AppState {
             card.badge = activeCLIProfile == active ? "Desktop · CLI" : "Desktop"
             if let usage = usage[active] {
                 card.subtitle = UsageFormat.updatedText(usage.asOf)
-                card.limits = [Self.limit("Session", usage.fiveHour, window: 5 * 3600),
-                               Self.limit("Weekly", usage.sevenDay, window: 7 * 86400)]
+                card.limits = ([Self.limit("Session", usage.fiveHour, window: 5 * 3600),
+                                Self.limit("Weekly", usage.sevenDay, window: 7 * 86400)]
+                               + usage.scoped.map { Self.limit("Weekly · \($0.name)", $0.window, window: 7 * 86400) })
                     .compactMap { $0 }
+                if let extra = usage.extraUsage {
+                    let used = UsageFormat.money(extra.used, currency: extra.currency)
+                    card.details = [UsageDetail(
+                        title: "Extra usage",
+                        value: extra.limit.map { "\(used) of \(UsageFormat.money($0, currency: extra.currency))" } ?? used,
+                        used: extra.limit.map { min(100, 100 * extra.used / max($0, 0.01)) })]
+                }
                 card.isStale = claude.isRunning && Date().timeIntervalSince(usage.asOf) > Self.staleAfter
                 if card.isStale {
                     card.notice = "Claude has not refreshed these numbers for a while."
@@ -51,14 +59,17 @@ extension AppState {
     var menuAccounts: [UsageAccount] {
         guard mode == .ready else { return [] }
         return allProfiles.filter { $0 != activeProfile }.map { name in
-            UsageAccount(id: name, title: name, remaining: usage[name]?.fiveHourRemaining.map(Double.init))
+            let profileUsage = usage[name]
+            return UsageAccount(id: name, title: name,
+                                session: Self.limit("Session", profileUsage?.fiveHour, window: 5 * 3600),
+                                weekly: Self.limit("Weekly", profileUsage?.sevenDay, window: 7 * 86400))
         }
     }
 
     var canSwitchDesktop: Bool { mode == .ready && !isSwitching && claudeAppFound }
 
     /// An expired window has reset since Claude last looked: 100% and no countdown.
-    private static func limit(_ title: String, _ usage: ProfileUsage.Window?, window: TimeInterval) -> UsageLimit? {
+    static func limit(_ title: String, _ usage: ProfileUsage.Window?, window: TimeInterval) -> UsageLimit? {
         guard let usage else { return nil }
         return UsageLimit(title: title, remaining: Double(usage.remainingPercent),
                           resetsAt: usage.expired ? nil : usage.resetsAt, window: window)

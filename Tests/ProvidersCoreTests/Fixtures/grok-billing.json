@@ -1,0 +1,20 @@
+{
+  "config": {
+    "creditUsagePercent": 12.5,
+    "currentPeriod": {
+      "type": "USAGE_PERIOD_TYPE_WEEKLY",
+      "start": "2026-11-01T12:00:00.123456+00:00",
+      "end": "2026-11-08T12:00:00.123456+00:00"
+    },
+    "billingPeriodStart": "2026-11-01T00:00:00Z",
+    "billingPeriodEnd": "2026-12-01T00:00:00Z",
+    "onDemandCap": { "val": 1000 },
+    "onDemandUsed": { "val": 250 },
+    "prepaidBalance": { "val": 1446 },
+    "productUsage": [
+      { "product": "GrokChat", "usagePercent": 2.5 },
+      { "product": "GrokBuild", "usagePercent": 10.0 },
+      { "product": "GrokImagine", "usagePercent": 0 }
+    ]
+  }
+}

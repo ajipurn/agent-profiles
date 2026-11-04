@@ -162,6 +162,30 @@ private func lines(_ rows: [String]) -> Data { Data(rows.joined(separator: "\n")
         #expect(summary.unpricedModels == ["unknown"])
     }
 
+    @Test func dailyAndModelBreakdown() {
+        let now = utc.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 12))!
+        let day = { (offset: Int) in Day(utc.date(byAdding: .day, value: offset, to: now)!, calendar: utc) }
+        let million = TokenUsage(input: 1_000_000)
+        let entries = [
+            UsageEntry(day: day(0), provider: .claude, model: "big", tokens: million),
+            UsageEntry(day: day(0), provider: .claude, model: "big", tokens: million),
+            UsageEntry(day: day(0), provider: .codex, model: "small", tokens: million),
+            UsageEntry(day: day(-3), provider: .codex, model: "small", tokens: million),
+        ]
+        let summary = CostSummary.summarize(entries, now: now, calendar: utc) { model in
+            ModelPrice(input: model == "big" ? 3e-6 : 1e-6, output: 0)
+        }
+        #expect(summary.daily[day(0)]?[.claude]?.dollars == 6)
+        #expect(summary.daily[day(-3)]?[.codex]?.tokens == 1_000_000)
+        #expect(summary.daily[day(-1)] == nil)
+        let top = summary.topModels(.last30Days)
+        #expect(top.map(\.0.model) == ["big", "small"])
+        #expect(top.last?.1.dollars == 2)
+        #expect(summary.topModels(on: day(-3)).map(\.0.model) == ["small"])
+        #expect(Day.lastDays(30, now: now, calendar: utc).last?.0 == day(0))
+        #expect(Day.lastDays(30, now: now, calendar: utc).first?.0 == day(-29))
+    }
+
     @Test func regionMultiplierAndSearchesAddUp() {
         let now = utc.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 12))!
         var entry = UsageEntry(day: Day(now, calendar: utc), provider: .claude, model: "a",

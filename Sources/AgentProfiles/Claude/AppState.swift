@@ -206,51 +206,11 @@ final class AppState: ObservableObject {
                 self.usage = map
                 self.usageScanRunning = false
                 self.lastUsageScan = Date()
-                self.notifyIfActiveNearlyOut()
                 if let history = self.history {
                     let samples = map.map { UsageSample.claude($0.key, $0.value) }
                     Task { await history.record(samples) }
                 }
             }
-        }
-    }
-
-    // Windows already alerted about, keyed by profile + reset time so each
-    // 5-hour window fires at most once. In-memory on purpose: a relaunch
-    // re-alerting once is fine.
-    private var lowLimitNotified: Set<String> = []
-
-    /// Posts one notification when the active profile's 5-hour window enters
-    /// the red zone (≤10% left), suggesting the freshest other profile;
-    /// clicking the notification switches to it (handled in the app delegate).
-    private func notifyIfActiveNearlyOut() {
-        guard let active = activeProfile,
-              let window = usage[active]?.fiveHour, !window.expired,
-              let resetsAt = window.resetsAt else { return }
-        let remaining = window.remainingPercent
-        guard remaining <= 10 else { return }
-        let key = "\(active)-\(Int(resetsAt.timeIntervalSince1970))"
-        guard !lowLimitNotified.contains(key) else { return }
-        lowLimitNotified.insert(key)
-
-        // Best candidate: the other profile with the most 5h left — only
-        // suggested when comfortably green, otherwise the alert stands alone.
-        var bestName: String?
-        var bestRemaining = 40
-        for name in allProfiles where name != active {
-            if let r = usage[name]?.fiveHourRemaining, r > bestRemaining {
-                bestName = name
-                bestRemaining = r
-            }
-        }
-        let resets = RelativeDateTimeFormatter().localizedString(for: resetsAt, relativeTo: Date())
-        if let bestName {
-            Notifier.post("\(active) is nearly out — \(remaining)% of 5h left",
-                          "Resets \(resets). Click to switch to \(bestName) (\(bestRemaining)% left).",
-                          userInfo: ["switchTo": bestName])
-        } else {
-            Notifier.post("\(active) is nearly out — \(remaining)% of 5h left",
-                          "Resets \(resets).")
         }
     }
 
@@ -537,9 +497,13 @@ final class AppState: ObservableObject {
             do {
                 let result = try self.manager.restoreFromBackup(dir)
                 self.claude.relaunch()
-                Notifier.post("History restored",
-                              result.sharedArchive.map { "Shared pile archived to \($0.lastPathComponent)." }
-                                ?? "Each profile restored to its own sessions.")
+                var body = result.sharedArchive.map { "Shared pile archived to \($0.lastPathComponent)." }
+                    ?? "Each profile restored to its own sessions."
+                if !result.renamed.isEmpty {
+                    body += " Renamed profiles matched by account: "
+                        + result.renamed.sorted { $0.key < $1.key }.map { "\($0.value) → \($0.key)" }.joined(separator: ", ") + "."
+                }
+                Notifier.post("History restored", body)
             } catch {
                 self.claude.relaunch()
                 Notifier.post("Restore failed", error.localizedDescription)

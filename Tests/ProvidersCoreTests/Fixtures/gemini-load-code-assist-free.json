@@ -1,0 +1,13 @@
+{
+  "currentTier": {
+    "id": "free-tier",
+    "name": "Gemini Code Assist for individuals",
+    "description": "Gemini Code Assist for individuals",
+    "userDefinedCloudaicompanionProject": false
+  },
+  "allowedTiers": [
+    {"id": "free-tier", "name": "Gemini Code Assist for individuals", "isDefault": true}
+  ],
+  "cloudaicompanionProject": "fake-companion-project-123",
+  "gcpManaged": false
+}

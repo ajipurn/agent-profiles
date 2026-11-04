@@ -29,6 +29,9 @@ var targets: [Target] = [
     ),
     // Imported from codex-profiles.
     .target(name: "CodexProfilesCore", dependencies: ["PlatformSupport"]),
+    // Usage of providers beyond Claude and Codex (Gemini, Copilot, …), read
+    // from the sign-ins their own tools leave on disk. No UI.
+    .target(name: "ProvidersCore", dependencies: ["PlatformSupport"]),
     // Estimated spend from local Claude Code and Codex logs, priced with
     // a generated LiteLLM snapshot (scripts/update-pricing.py).
     .target(name: "UsageCostCore", dependencies: ["PlatformSupport"]),
@@ -47,6 +50,11 @@ var targets: [Target] = [
     .testTarget(
         name: "UsageCostCoreTests",
         dependencies: ["UsageCostCore"]
+    ),
+    .testTarget(
+        name: "ProvidersCoreTests",
+        dependencies: ["ProvidersCore"],
+        resources: [.copy("Fixtures")]
     ),
     .testTarget(
         name: "UsageHistoryCoreTests",
@@ -85,6 +93,7 @@ targets += [
     // Menu card, account rows, switcher and menu bar icon shared by both
     // providers (CodexBar-style).
     .target(name: "AgentUI"),
+    .testTarget(name: "AgentUITests", dependencies: ["AgentUI"]),
     .target(
         name: "CodexProfilesUI",
         dependencies: ["AgentUI", "CodexProfilesCore", .product(name: "Sparkle", package: "Sparkle")]
@@ -93,8 +102,8 @@ targets += [
     // screens directly and the Codex ones from CodexProfilesUI.
     .executableTarget(
         name: "AgentProfiles",
-        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "UsageCostCore",
-                       "UsageHistoryCore"],
+        dependencies: ["AgentUI", "ClaudeProfilesCore", "CodexProfilesCore", "CodexProfilesUI", "ProvidersCore",
+                       "UsageCostCore", "UsageHistoryCore"],
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("SwiftUI"),

@@ -1,0 +1,12 @@
+{
+  "https://accounts.x.ai/sign-in": {
+    "key": "fake-grok-legacy-session", "expires_at": "2026-11-30T00:00:00Z", "auth_mode": "session",
+    "email": "legacy-fake@example.com"
+  },
+  "https://auth.x.ai::00000000-0000-0000-0000-000000000000": {
+    "key": "fake-grok-oidc-access", "refresh_token": "fake-grok-refresh",
+    "expires_at": "2026-11-10T12:00:00.123456Z", "create_time": "2026-11-03T12:00:00.123456Z",
+    "auth_mode": "oidc", "email": "grok-fake@example.com", "team_id": "team-fake", "user_id": "user-fake",
+    "first_name": "Fake", "last_name": "User", "principal_type": "user"
+  }
+}

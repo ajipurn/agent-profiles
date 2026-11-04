@@ -324,6 +324,9 @@ public final class ProfileManager: Sendable {
         /// The `_shared-sessions` pile, moved aside. Post-enable sessions live here as one
         /// undifferentiated set — they cannot be split back per account.
         public let sharedArchive: URL?
+        /// Profiles renamed since the backup, matched to their old folder by
+        /// account: current name → name in the backup.
+        public var renamed: [String: String] = [:]
     }
 
     /// True per-account rollback: reset every existing profile to its own sessions from
@@ -343,14 +346,17 @@ public final class ProfileManager: Sendable {
         // Save the current state first so this restore can itself be undone.
         let prerestore = try backupRealTrees(tag: "prerestore", now: now)
 
+        // Which backup folder is whose: read before anything is reset.
+        let sources = try backupSources(in: backupDir)
+
         // Reset each existing profile to the backup's copy — or an empty tree when the
         // backup predates it (a profile created after sharing was enabled).
         for name in profiles() {
             for tree in Self.sessionTrees {
                 let target = profilesDir.appendingPathComponent(name).appendingPathComponent(tree)
                 if itemExists(target) { try DirectoryLink.removeTree(at: target) } // symlink or real dir
-                let src = backupDir.appendingPathComponent(name).appendingPathComponent(tree)
-                if isRealDirectory(src) {
+                let src = sources[name].map { backupDir.appendingPathComponent($0).appendingPathComponent(tree) }
+                if let src, isRealDirectory(src) {
                     try fm.copyItem(at: src, to: target)
                 } else {
                     try fm.createDirectory(at: target, withIntermediateDirectories: true)
@@ -367,7 +373,69 @@ public final class ProfileManager: Sendable {
             archive = dst
         }
         // ponytail: not transactional across profiles; the prerestore backup is the recovery path.
-        return RestoreResult(prerestoreBackup: prerestore, sharedArchive: archive)
+        var result = RestoreResult(prerestoreBackup: prerestore, sharedArchive: archive)
+        result.renamed = sources.filter { $0.key != $0.value }
+        return result
+    }
+
+    /// Current profile → its folder in `backupDir`. Backups are keyed by the
+    /// profile's name at backup time, so a profile renamed since then has no
+    /// folder of its own name (#11). Its sessions are filed under its Claude
+    /// account id, which a rename doesn't change, so that finds the folder:
+    /// 1. the same-named folder, unless it clearly holds a different account
+    ///    (the name was reused after a rename);
+    /// 2. otherwise the one unclaimed folder holding the profile's account;
+    /// 3. otherwise, when exactly one profile and one folder named after no
+    ///    current profile are left, each other. Sessions are filed under
+    ///    their account, so even a wrong pairing never shows one account's
+    ///    history to another; the prerestore backup undoes it.
+    func backupSources(in backupDir: URL) throws -> [String: String] {
+        var folders: [String: Set<String>] = [:] // backup folder → accounts filed in it
+        for folder in try realSubdirectories(of: backupDir) {
+            let trees = Self.sessionTrees.map { folder.appendingPathComponent($0) }.filter(isRealDirectory)
+            guard !trees.isEmpty else { continue }
+            folders[folder.lastPathComponent] = Set(try trees.flatMap { try realSubdirectories(of: $0) }.map(\.lastPathComponent))
+        }
+        let names = profiles()
+        let accounts = Dictionary(uniqueKeysWithValues: names.map { ($0, knownAccounts(of: $0)) })
+        var sources: [String: String] = [:]
+        var claimed: Set<String> = []
+        for name in names {
+            guard let held = folders[name] else { continue }
+            let mine = accounts[name] ?? []
+            if mine.isEmpty || held.isEmpty || !mine.isDisjoint(with: held) {
+                sources[name] = name
+                claimed.insert(name)
+            }
+        }
+        for name in names where sources[name] == nil {
+            let mine = accounts[name] ?? []
+            guard !mine.isEmpty else { continue }
+            let matches = folders.filter { !claimed.contains($0.key) && !mine.isDisjoint(with: $0.value) }
+            guard matches.count == 1, let folder = matches.first?.key else { continue }
+            sources[name] = folder
+            claimed.insert(folder)
+        }
+        let leftProfiles = names.filter { sources[$0] == nil && folders[$0] == nil }
+        let leftFolders = folders.keys.filter { !claimed.contains($0) && !names.contains($0) }
+        if leftProfiles.count == 1, leftFolders.count == 1 {
+            sources[leftProfiles[0]] = leftFolders[0]
+        }
+        return sources
+    }
+
+    /// Claude account ids this profile's sessions are filed under: the one it
+    /// recorded at login, else the account folders of its own (unshared) trees.
+    private func knownAccounts(of name: String) -> Set<String> {
+        let dir = profilesDir.appendingPathComponent(name)
+        if let account = accountID(of: dir) { return [account] }
+        var found: Set<String> = []
+        for tree in Self.sessionTrees {
+            let path = dir.appendingPathComponent(tree)
+            guard isRealDirectory(path) else { continue } // a shared link holds everyone's
+            found.formUnion(((try? realSubdirectories(of: path)) ?? []).map(\.lastPathComponent))
+        }
+        return found
     }
 
     /// Safe while Claude is running: only creates missing symlinks — never merges,

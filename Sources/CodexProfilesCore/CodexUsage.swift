@@ -79,7 +79,33 @@ public struct CodexUsage: Equatable, Sendable {
     public var secondary: UsageWindow?
     public var creditsBalance: String?
     public var resetCredits: Int?
+    /// Extra windows for one feature, such as GPT-5 Codex Spark.
+    public var additional: [NamedWindow]
+    /// A workspace's per-member credit cap: used and limit, in credits.
+    public var creditLimit: CreditLimit?
     public var fetchedAt: Date
+
+    public struct NamedWindow: Equatable, Sendable {
+        public var name: String
+        public var window: UsageWindow
+
+        public init(name: String, window: UsageWindow) {
+            self.name = name
+            self.window = window
+        }
+    }
+
+    public struct CreditLimit: Equatable, Sendable {
+        public var used: Double
+        public var limit: Double
+        public var resetAt: Date?
+
+        public init(used: Double, limit: Double, resetAt: Date? = nil) {
+            self.used = used
+            self.limit = limit
+            self.resetAt = resetAt
+        }
+    }
 
     public init(
         planType: String? = nil,
@@ -89,6 +115,8 @@ public struct CodexUsage: Equatable, Sendable {
         secondary: UsageWindow? = nil,
         creditsBalance: String? = nil,
         resetCredits: Int? = nil,
+        additional: [NamedWindow] = [],
+        creditLimit: CreditLimit? = nil,
         fetchedAt: Date = Date()
     ) {
         self.planType = planType
@@ -98,6 +126,8 @@ public struct CodexUsage: Equatable, Sendable {
         self.secondary = secondary
         self.creditsBalance = creditsBalance
         self.resetCredits = resetCredits
+        self.additional = additional
+        self.creditLimit = creditLimit
         self.fetchedAt = fetchedAt
     }
 
@@ -134,16 +164,60 @@ public struct CodexUsage: Equatable, Sendable {
         let rateLimit = root["rate_limit"] as? [String: Any]
         let credits = root["credits"] as? [String: Any]
         let resetCredits = root["rate_limit_reset_credits"] as? [String: Any]
+        let (primary, secondary) = slots(rateLimit, fetchedAt: fetchedAt)
         return CodexUsage(
             planType: string(root["plan_type"]),
             allowed: rateLimit?["allowed"] as? Bool,
             limitReached: rateLimit?["limit_reached"] as? Bool,
-            primary: window(rateLimit?["primary_window"], fetchedAt: fetchedAt),
-            secondary: window(rateLimit?["secondary_window"], fetchedAt: fetchedAt),
-            creditsBalance: creditBalance(credits?["balance"]),
+            primary: primary,
+            secondary: secondary,
+            creditsBalance: (credits?["has_credits"] as? Bool) == false ? nil : creditBalance(credits?["balance"]),
             resetCredits: int(resetCredits?["available_count"]),
+            additional: additionalWindows(root["additional_rate_limits"], fetchedAt: fetchedAt),
+            creditLimit: creditLimit(root["spend_control"]),
             fetchedAt: fetchedAt
         )
+    }
+
+    /// Codex normally sends the 5-hour window as primary and the weekly one
+    /// as secondary, but a lone weekly limit can arrive in the primary slot;
+    /// it moves to the weekly slot here.
+    static func slots(_ rateLimit: [String: Any]?, fetchedAt: Date) -> (UsageWindow?, UsageWindow?) {
+        let first = window(rateLimit?["primary_window"], fetchedAt: fetchedAt)
+        let second = window(rateLimit?["secondary_window"], fetchedAt: fetchedAt)
+        if first?.label == "Wk", second == nil || second?.label == "5h" { return (second, first) }
+        return (first, second)
+    }
+
+    /// `additional_rate_limits`: one entry per metered feature, each with its
+    /// own `rate_limit` windows ("Spark", "Spark weekly").
+    static func additionalWindows(_ value: Any?, fetchedAt: Date) -> [NamedWindow] {
+        var found: [NamedWindow] = []
+        for entry in value as? [Any] ?? [] {
+            guard let object = entry as? [String: Any],
+                  let rateLimit = object["rate_limit"] as? [String: Any] else { continue }
+            let raw = string(object["limit_name"]) ?? string(object["metered_feature"]) ?? "Extra"
+            let name = displayName(raw)
+            let (short, long) = slots(rateLimit, fetchedAt: fetchedAt)
+            if let short { found.append(.init(name: name, window: short)) }
+            if let long { found.append(.init(name: "\(name) weekly", window: long)) }
+        }
+        return found
+    }
+
+    /// "gpt-5.3-codex-spark" / "codex_spark" → "Spark"; anything else title-cased.
+    static func displayName(_ raw: String) -> String {
+        if raw.lowercased().contains("spark") { return "Spark" }
+        return raw.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalized
+    }
+
+    /// `spend_control.individual_limit`; ChatGPT sends the numbers as strings.
+    static func creditLimit(_ value: Any?) -> CreditLimit? {
+        guard let limit = (value as? [String: Any])?["individual_limit"] as? [String: Any],
+              let used = double(limit["used"]), used >= 0,
+              let cap = double(limit["limit"]), cap > 0 else { return nil }
+        return CreditLimit(used: used, limit: cap,
+                           resetAt: double(limit["reset_at"]).map(Date.init(timeIntervalSince1970:)))
     }
 
     static func window(_ value: Any?, fetchedAt: Date) -> UsageWindow? {

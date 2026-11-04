@@ -1,0 +1,5 @@
+{"nextDateReset":1.7882208E9,
+ "overageConfiguration":{"overageStatus":"DISABLED"},
+ "subscriptionInfo":{"subscriptionTitle":"KIRO PRO+"},
+ "usageBreakdownList":[{"bonuses":[{"bonusCode":"FAKE-WELCOME"}],"currency":"USD",
+   "currentUsageWithPrecision":2100.25,"resourceType":"CREDIT","usageLimitWithPrecision":2000.0}]}

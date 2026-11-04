@@ -57,12 +57,15 @@ public struct AccountIdentity: Equatable, Sendable, Codable, Hashable {
     public static func displayPlan(_ plan: String) -> String {
         switch plan.lowercased() {
         case "plus": "Plus"
+        case "prolite": "Pro 100"
         case "pro": "Pro"
+        case "promax": "Pro 500"
+        case "self_serve_business_prolite": "Business Premium"
         case "team": "Team"
         case "business": "Business"
         case "enterprise": "Enterprise"
         case "free", "freeplan": "Free"
-        default: plan.localizedCapitalized
+        default: plan.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
         }
     }
 }

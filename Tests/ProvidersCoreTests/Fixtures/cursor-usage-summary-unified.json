@@ -1,0 +1,10 @@
+{
+  "billingCycleStart": "2026-10-20T00:00:00.000Z",
+  "billingCycleEnd": "2026-11-20T00:00:00.000Z",
+  "membershipType": "unified_pro",
+  "limitType": "user",
+  "individualUsage": {
+    "plan": {"enabled": true, "used": 0, "limit": 2000, "totalPercentUsed": 0},
+    "onDemand": {"enabled": false, "used": 0, "limit": null}
+  }
+}

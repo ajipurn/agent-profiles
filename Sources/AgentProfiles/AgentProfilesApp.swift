@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private(set) var codex: AppModel!
     private var updates: UpdateController!
     private var cost: CostModel!
+    private var extras: ExtraProvidersModel!
+    private var status: StatusModel!
     private var history: UsageHistory!
     private var claudeDemoHome: URL?
 
@@ -48,8 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// A Codex switch started here (menu, hotkey, URL, notification), reported
     /// by notification once it finishes.
     private var pendingCodexSwitch: String?
-    /// Codex session windows already alerted about (account + reset time).
-    private var codexLowNotified: Set<String> = []
+    private let alerts = AlertCenter()
     /// Provider of the last Claude or Codex app brought to the front; other
     /// apps leave it alone so the icon doesn't flip back and forth.
     private var activeAppProvider: MenuBarProvider?
@@ -59,7 +60,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// What the status item and the menu's opening tab show.
     private var displayedProvider: MenuBarProvider {
-        (Preferences.followActiveApp ? activeAppProvider : nil) ?? Preferences.menuBarProvider ?? .claude
+        (Preferences.followActiveApp ? activeAppProvider : nil)
+            ?? (Preferences.followTightest ? tightestProvider : nil)
+            ?? Preferences.menuBarProvider ?? .claude
+    }
+
+    /// Of Claude and Codex, the one with less left in either window.
+    private var tightestProvider: MenuBarProvider? {
+        func usable(_ card: UsageCardModel) -> Double? {
+            [card.sessionRemaining, card.weeklyRemaining].compactMap { $0 }.min()
+        }
+        switch (usable(state.cardModel), usable(codex.cardModel)) {
+        case let (claude?, codex?): return codex < claude ? .codex : .claude
+        case (_?, nil): return .claude
+        case (nil, _?): return .codex
+        default: return nil
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -113,14 +129,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let ids = self.codex.hotkeyAccountIDs
                 guard index < ids.count else { return }
                 self.switchCodex(ids[index])
+            case .panel:
+                if let button = self.statusItem.button { self.panel.toggle(from: button) }
             }
         }
 
         // Start the first log scan now so the panel opens with numbers.
         cost = CostModel(home: claudeDemoHome ?? FileManager.default.homeDirectoryForCurrentUser)
         cost.refresh()
+        extras = ExtraProvidersModel(demo: isDemo)
+        status = StatusModel(demo: isDemo)
+        watchStatusPages()
         panel = StatusPanelController(
-            claude: state, codex: codex, cost: cost,
+            claude: state, codex: codex, cost: cost, extras: extras, status: status,
             defaultTab: { [weak self] in self?.displayedProvider ?? .claude },
             pickTab: { [weak self] provider in
                 // Also overrides the detected app, even if the preference
@@ -145,13 +166,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 // Async so the @Published values have actually been written.
-                DispatchQueue.main.async { self?.updateStatusItem() }
+                DispatchQueue.main.async {
+                    self?.updateStatusItem()
+                    self?.evaluateAlerts()
+                }
             })
         cancellables.append(NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                HotKeys.setPanelShortcut(Preferences.panelHotKey)
                 if Preferences.menuBarProvider != self.lastPickedProvider {
                     self.lastPickedProvider = Preferences.menuBarProvider
                     self.activeAppProvider = nil
@@ -171,6 +196,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         })
         observeCodex()
+        cancellables.append(extras.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.watchStatusPages()
+                    self?.updateStatusItem()
+                    self?.evaluateAlerts()
+                }
+            })
 
         if isDemo, !CommandLine.arguments.contains("--no-settings") { showSettings(.general) }
         #if DEBUG
@@ -220,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if self.codex.isCompletingLogin, !self.wasCompletingLogin { self.showSettings(.codex) }
                 self.wasCompletingLogin = self.codex.isCompletingLogin
                 self.reportCodexSwitch()
-                self.notifyIfCodexNearlyOut()
+                self.evaluateAlerts()
                 self.recordCodexHistory()
                 self.updateStatusItem()
                 self.observeCodex()
@@ -258,31 +292,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Once per session window: the active Codex account has 10% or less
-    /// left. Suggests the saved account with the most left, if it is well
-    /// clear; clicking the notification switches to it.
-    private func notifyIfCodexNearlyOut() {
-        guard let active = codex.activeAccountID,
-              let session = codex.cardModel.limits.first(where: { $0.title == "Session" }),
-              let remaining = session.remaining, remaining <= 10,
-              let resetsAt = session.resetsAt, resetsAt > Date()
-        else { return }
-        // Codex reports "resets after N seconds", so the time drifts a little
-        // between fetches; ten-minute buckets keep it one window.
-        let key = "\(active)-\(Int(resetsAt.timeIntervalSince1970 / 600))"
-        guard codexLowNotified.insert(key).inserted else { return }
-        let name = codex.accountName(active) ?? "Codex"
-        let resets = RelativeDateTimeFormatter().localizedString(for: resetsAt, relativeTo: Date())
-        let best = codex.menuAccounts
-            .filter { ($0.remaining ?? 0) > 40 }
-            .max { ($0.remaining ?? 0) < ($1.remaining ?? 0) }
-        if let best {
-            Notifier.post("Codex: \(name) is nearly out — \(UsageFormat.percent(remaining)) of session left",
-                          "Resets \(resets). Click to switch to \(best.title) (\(UsageFormat.percent(best.remaining)) left).",
-                          userInfo: ["switchCodex": best.id])
-        } else {
-            Notifier.post("Codex: \(name) is nearly out — \(UsageFormat.percent(remaining)) of session left",
-                          "Resets \(resets).")
+    /// Claude's and Codex's status pages, plus those of enabled extras.
+    private func watchStatusPages() {
+        var pages = ["claude": StatusModel.claudePage, "codex": StatusModel.codexPage]
+        pages.merge(extras.statusPages) { first, _ in first }
+        status.watch(pages)
+    }
+
+    /// Usage notifications for the active Claude profile and Codex account,
+    /// and every enabled extra provider; and one when a sign-in stops working.
+    private func evaluateAlerts() {
+        for provider in extras.active {
+            alerts.signIn(provider: provider.name, expired: extras.states[provider.id]?.isUnauthorized == true)
+            let card = extras.cardModel(provider)
+            guard !card.isStale else { continue }
+            alerts.evaluate(provider: provider.name, account: card.account ?? provider.name, limits: card.limits)
+        }
+        alerts.signIn(provider: "Codex", expired: codex.liveUsage.error == AppModel.signInAgainMessage)
+        if state.mode == .ready {
+            let card = state.cardModel
+            alerts.evaluate(provider: "Claude", account: card.account, limits: card.limits,
+                            alternatives: state.menuAccounts, switchKey: "switchTo")
+        }
+        let card = codex.cardModel
+        if !card.isStale {
+            alerts.evaluate(provider: "Codex", account: card.account, limits: card.limits,
+                            alternatives: codex.menuAccounts, switchKey: "switchCodex")
         }
     }
 
@@ -387,9 +422,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let weekly = card.weeklyRemaining
         button.image = UsageIcon.image(session: session, weekly: weekly,
                                        dimmed: card.isStale || (session == nil && weekly == nil))
-        if Preferences.showPercent, let value = session ?? weekly {
+        if Preferences.showPercent, let value = Preferences.menuBarMetric.value(session: session, weekly: weekly) {
             button.attributedTitle = NSAttributedString(
-                string: UsageFormat.percent(value),
+                string: UsageFormat.compact(value, showsUsed: UsageDisplay.showsUsed),
                 attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)])
         } else {
             button.title = ""
@@ -426,7 +461,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showSettings(_ pane: SettingsPane?) {
         if let pane { UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.storageKey) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView(claude: state, codex: codex, updates: updates, history: history))
+            let host = NSHostingController(rootView: SettingsView(claude: state, codex: codex, providers: extras,
+                                                                  updates: updates, history: history))
             let window = NSWindow(contentViewController: host)
             window.title = "Agent Profiles Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
