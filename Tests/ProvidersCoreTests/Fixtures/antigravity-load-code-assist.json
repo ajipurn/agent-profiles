@@ -1,0 +1,6 @@
+{
+  "currentTier": {"id": "free-tier", "name": "Antigravity", "description": "Antigravity individual"},
+  "paidTier": {"id": "g1-pro-tier", "name": "Google AI Pro"},
+  "allowedTiers": [{"id": "free-tier", "isDefault": true}],
+  "cloudaicompanionProject": "fake-antigravity-project-789"
+}

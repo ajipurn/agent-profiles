@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import AgentUI
 import CodexProfilesUI
+import ProvidersCore
 
 /// The status item's panel, OpenUsage-style: estimated cost, provider
 /// switcher, the selected provider's usage card, other accounts to switch
@@ -20,6 +21,8 @@ final class StatusPanelController: NSObject {
     private let claude: AppState
     private let codex: AppModel
     private let cost: CostModel
+    private let extras: ExtraProvidersModel
+    private let status: StatusModel
     private let defaultTab: () -> MenuBarProvider
     private let pickTab: (MenuBarProvider) -> Void
     private let openSettings: (SettingsPane) -> Void
@@ -33,7 +36,7 @@ final class StatusPanelController: NSObject {
     /// so SwiftUI would never report the real height (1.3.1–1.3.2).
     private static let minHeight: CGFloat = 200
 
-    init(claude: AppState, codex: AppModel, cost: CostModel,
+    init(claude: AppState, codex: AppModel, cost: CostModel, extras: ExtraProvidersModel, status: StatusModel,
          defaultTab: @escaping () -> MenuBarProvider,
          pickTab: @escaping (MenuBarProvider) -> Void,
          openSettings: @escaping (SettingsPane) -> Void,
@@ -41,6 +44,8 @@ final class StatusPanelController: NSObject {
         self.claude = claude
         self.codex = codex
         self.cost = cost
+        self.extras = extras
+        self.status = status
         self.defaultTab = defaultTab
         self.pickTab = pickTab
         self.openSettings = openSettings
@@ -60,9 +65,15 @@ final class StatusPanelController: NSObject {
         // That click meant "close", not "open again" (1.3.3 flickered).
         if Date().timeIntervalSince(closedAt) < 0.4 { return }
         self.button = button
-        tab.selected = defaultTab() // always open on the provider the icon shows
+        tab.selected = defaultTab().rawValue // always open on the provider the icon shows
+        #if DEBUG
+        // Screenshot aid: `--tab <id>` opens on that tab.
+        if let flag = CommandLine.arguments.firstIndex(of: "--tab"), CommandLine.arguments.indices.contains(flag + 1) {
+            tab.selected = CommandLine.arguments[flag + 1]
+        }
+        #endif
         let host = NSHostingController(rootView: StatusPanelView(
-            tab: tab, claude: claude, codex: codex, cost: cost, actions: actions,
+            tab: tab, claude: claude, codex: codex, cost: cost, extras: extras, status: status, actions: actions,
             onHeightChange: { [weak self] height in self?.place(height: height) }))
         host.sizingOptions = [] // place(height:) owns the window size
         // Measured explicitly up front: fittingSize is 0 here, which left
@@ -81,6 +92,8 @@ final class StatusPanelController: NSObject {
         codex.startLiveUsagePolling()
         claude.refreshUsage()
         cost.refresh()
+        extras.refresh()
+        status.refresh()
         NSApp.activate(ignoringOtherApps: true) // so the panel takes keys (⌘R, ⌘,, ⌘Q)
         panel.makeKeyAndOrderFront(nil)
         button.highlight(true)
@@ -151,11 +164,12 @@ final class StatusPanelController: NSObject {
 
     private var actions: PanelActions {
         PanelActions(
-            select: { [weak self] provider in
-                guard let self, provider != self.tab.selected else { return }
-                self.tab.selected = provider
-                // The menu bar icon (and Settings' "Show usage for") follows the tab.
-                self.pickTab(provider)
+            select: { [weak self] id in
+                guard let self, id != self.tab.selected else { return }
+                self.tab.selected = id
+                // The menu bar icon (and Settings' "Show usage for") follows
+                // the Claude and Codex tabs.
+                if let provider = MenuBarProvider(rawValue: id) { self.pickTab(provider) }
             },
             run: { [weak self] action in
                 guard let self else { return }
@@ -186,6 +200,13 @@ final class StatusPanelController: NSObject {
         case .saveCodex:
             codex.beginSave()
             openSettings(.codex)
+        case .refreshExtra:
+            extras.refresh(force: true)
+            status.refresh(force: true)
+        case .open(let url): NSWorkspace.shared.open(url)
+        case .copyImage(let image):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
         case .settings(let pane): openSettings(pane)
         case .quit: NSApp.terminate(nil)
         }
@@ -196,24 +217,26 @@ enum PanelAction {
     case switchClaude(String), switchCodex(String), switchCLI(String?)
     case setUpClaude, newClaudeProfile, refreshClaude
     case refreshCodex, addCodex, cancelCodexLogin, saveCodex
+    case refreshExtra, open(URL), copyImage(NSImage)
     case settings(SettingsPane), quit
 
     var closesPanel: Bool {
         switch self {
-        case .refreshClaude, .refreshCodex, .switchCLI, .cancelCodexLogin: false
+        case .refreshClaude, .refreshCodex, .refreshExtra, .switchCLI, .cancelCodexLogin, .copyImage: false
         default: true
         }
     }
 }
 
 struct PanelActions {
-    let select: (MenuBarProvider) -> Void
+    let select: (String) -> Void
     let run: (PanelAction) -> Void
 }
 
+/// The panel's tab: "claude", "codex", an extra provider's id, or "overview".
 @MainActor
 final class TabSelection: ObservableObject {
-    @Published var selected: MenuBarProvider = .claude
+    @Published var selected = "claude"
 }
 
 struct StatusPanelView: View {
@@ -221,25 +244,33 @@ struct StatusPanelView: View {
     @ObservedObject var claude: AppState
     let codex: AppModel // @Observable: reading it in `body` keeps it live
     @ObservedObject var cost: CostModel
+    @ObservedObject var extras: ExtraProvidersModel
+    @ObservedObject var status: StatusModel
     @AppStorage(Preferences.showCostKey) private var showCost = true
+    @AppStorage(UsageDisplay.sortByHeadroomKey) private var sortByHeadroom = true
+    @AppStorage(UsageDisplay.hidePersonalKey) private var hidePersonal = false
+    @AppStorage(UsageDisplay.showsUsedKey) private var showsUsed = false
+    @AppStorage(UsageDisplay.resetClockKey) private var resetAsClock = false
     let actions: PanelActions
     /// The window follows the content as data loads or the tab changes.
     let onHeightChange: (CGFloat) -> Void
 
+    static let overviewID = "overview"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if showCost {
-                CostCardView(periods: cost.periods, isLoading: cost.summary == nil, note: cost.note)
+                CostCardView(periods: cost.periods, days: cost.days, isLoading: cost.summary == nil, note: cost.note)
             }
-            ProviderSwitcherView(
-                tiles: [
-                    .init(style: .claude, remaining: claude.cardModel.sessionRemaining),
-                    .init(style: .codex, remaining: codex.cardModel.sessionRemaining),
-                ],
-                selected: tab.selected.style.name,
-                onSelect: { name in actions.select(name == ProviderStyle.claude.name ? .claude : .codex) })
+            ProviderSwitcherView(tiles: tiles, selected: selectedID, onSelect: actions.select)
 
-            providerBody(tab.selected)
+            if selectedID == Self.overviewID {
+                OverviewView(rows: overviewRows, onSelect: actions.select)
+            } else if let extra = extras.active.first(where: { $0.id == selectedID }) {
+                extraBody(extra)
+            } else {
+                providerBody(selectedID == "codex" ? .codex : .claude)
+            }
 
             footer
         }
@@ -266,31 +297,104 @@ struct StatusPanelView: View {
         if height > 1 { onHeightChange(height) }
     }
 
+    // MARK: Tabs
+
+    /// The selected tab, falling back to Claude when it went away (an extra
+    /// provider turned off).
+    private var selectedID: String {
+        tiles.contains { $0.id == tab.selected } ? tab.selected : "claude"
+    }
+
+    private var tiles: [ProviderSwitcherView.Tile] {
+        var tiles: [ProviderSwitcherView.Tile] = []
+        if !extras.active.isEmpty {
+            tiles.append(.init(style: ProviderStyle(id: Self.overviewID, name: "Overview", symbol: "square.grid.2x2",
+                                                    accent: .accentColor),
+                               remaining: nil, hasIncident: false))
+        }
+        tiles.append(.init(style: .claude, remaining: claude.cardModel.sessionRemaining,
+                           hasIncident: status.incidents["claude"] != nil))
+        tiles.append(.init(style: .codex, remaining: codex.cardModel.sessionRemaining,
+                           hasIncident: status.incidents["codex"] != nil))
+        for provider in extras.active {
+            tiles.append(.init(style: ExtraProvidersModel.style(provider), remaining: extras.primaryRemaining(provider.id).0,
+                               hasIncident: status.incidents[provider.id] != nil))
+        }
+        return tiles
+    }
+
+    // MARK: Cards
+
+    private var claudeCard: UsageCardModel {
+        var card = claude.cardModel
+        card.incident = status.incident(for: "claude")
+        card.dashboardURL = URL(string: "https://claude.ai/settings/usage")
+        return card
+    }
+
+    private var codexCard: UsageCardModel {
+        var card = codex.cardModel
+        card.incident = status.incident(for: "codex")
+        card.dashboardURL = URL(string: "https://chatgpt.com/codex/settings/usage")
+        return card
+    }
+
+    private func extraCard(_ provider: any UsageProvider) -> UsageCardModel {
+        var card = extras.cardModel(provider)
+        card.incident = status.incident(for: provider.id)
+        return card
+    }
+
     @ViewBuilder
     private func providerBody(_ provider: MenuBarProvider) -> some View {
+        let card = provider == .claude ? claudeCard : codexCard
         VStack(alignment: .leading, spacing: 14) {
-            UsageCardView(model: provider == .claude ? claude.cardModel : codex.cardModel)
+            UsageCardView(model: card)
             accounts(provider)
             if provider == .claude, claude.cliSetUp, claude.mode == .ready {
                 cliPicker
             }
-            actionRow(provider)
+            actionRow(provider, card: card)
+        }
+    }
+
+    private func extraBody(_ provider: any UsageProvider) -> some View {
+        let card = extraCard(provider)
+        return VStack(alignment: .leading, spacing: 14) {
+            UsageCardView(model: card)
+            HStack(spacing: 8) {
+                PanelActionButton("Refresh", symbol: "arrow.clockwise") { actions.run(.refreshExtra) }
+                    .keyboardShortcut("r")
+                if let url = provider.dashboardURL {
+                    PanelActionButton("Dashboard", symbol: "chart.bar") { actions.run(.open(url)) }
+                }
+                PanelActionButton("Copy Image", symbol: "photo.on.rectangle") { copyImage(card) }
+                PanelActionButton("Manage", symbol: "slider.horizontal.3") { actions.run(.settings(.providers)) }
+            }
         }
     }
 
     @ViewBuilder
     private func accounts(_ provider: MenuBarProvider) -> some View {
-        let list = provider == .claude ? claude.menuAccounts : codex.menuAccounts
+        let list = sorted(provider == .claude ? claude.menuAccounts : codex.menuAccounts)
         let enabled = provider == .claude ? claude.canSwitchDesktop : codex.canSwitch
+        let best = list.count > 1 ? AlertCenter.best(list, for: "Session")?.id : nil
+        let tint = provider == .claude ? ProviderStyle.claude.accent : ProviderStyle.codex.accent
         if !list.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Switch Account")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("Switch Account")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("5h · Week")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 4)
                 VStack(spacing: 0) {
                     ForEach(list) { account in
-                        AccountRowView(account: account, isEnabled: enabled) {
+                        AccountRowView(account: account, tint: tint, isEnabled: enabled, isBest: account.id == best) {
                             actions.run(provider == .claude ? .switchClaude(account.id) : .switchCodex(account.id))
                         }
                     }
@@ -299,6 +403,20 @@ struct StatusPanelView: View {
                 .panelCard()
             }
         }
+    }
+
+    /// Most usable first (the tighter of the two windows), when Settings
+    /// says so; accounts without numbers last, in their saved order.
+    private func sorted(_ list: [UsageAccount]) -> [UsageAccount] {
+        guard sortByHeadroom else { return list }
+        return list.enumerated().sorted { lhs, rhs in
+            switch (lhs.element.usable, rhs.element.usable) {
+            case let (l?, r?) where l != r: l > r
+            case (_?, nil): true
+            case (nil, _?): false
+            default: lhs.offset < rhs.offset
+            }
+        }.map(\.element)
     }
 
     /// Which profile `claude` in the terminal uses; switching is instant.
@@ -333,7 +451,7 @@ struct StatusPanelView: View {
     }
 
     @ViewBuilder
-    private func actionRow(_ provider: MenuBarProvider) -> some View {
+    private func actionRow(_ provider: MenuBarProvider, card: UsageCardModel) -> some View {
         HStack(spacing: 8) {
             switch provider {
             case .claude:
@@ -342,8 +460,9 @@ struct StatusPanelView: View {
                 } else {
                     PanelActionButton("New Profile", symbol: "person.badge.plus") { actions.run(.newClaudeProfile) }
                 }
-                PanelActionButton("Refresh", symbol: "arrow.clockwise",) { actions.run(.refreshClaude) }
+                PanelActionButton("Refresh", symbol: "arrow.clockwise") { actions.run(.refreshClaude) }
                     .keyboardShortcut("r")
+                PanelActionButton("Copy Image", symbol: "photo.on.rectangle") { copyImage(card) }
                 PanelActionButton("Manage", symbol: "slider.horizontal.3") { actions.run(.settings(.claude)) }
             case .codex:
                 if codex.awaitingLogin {
@@ -355,11 +474,46 @@ struct StatusPanelView: View {
                 if codex.needsSave {
                     PanelActionButton("Save", symbol: "square.and.arrow.down") { actions.run(.saveCodex) }
                 }
-                PanelActionButton("Refresh", symbol: "arrow.clockwise",) { actions.run(.refreshCodex) }
+                PanelActionButton("Refresh", symbol: "arrow.clockwise") { actions.run(.refreshCodex) }
                     .keyboardShortcut("r")
+                if !codex.needsSave {
+                    PanelActionButton("Copy Image", symbol: "photo.on.rectangle") { copyImage(card) }
+                }
                 PanelActionButton("Manage", symbol: "slider.horizontal.3") { actions.run(.settings(.codex)) }
             }
         }
+    }
+
+    // MARK: Overview
+
+    /// Every provider at a glance, the one closest to running out first.
+    private var overviewRows: [OverviewView.Row] {
+        var rows: [OverviewView.Row] = [
+            .init(id: "claude", card: claudeCard),
+            .init(id: "codex", card: codexCard),
+        ]
+        rows += extras.active.map { .init(id: $0.id, card: extraCard($0)) }
+        return rows.enumerated().sorted { lhs, rhs in
+            let l = lhs.element.tightest ?? 101, r = rhs.element.tightest ?? 101
+            return l != r ? l < r : lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    // MARK: Snapshot
+
+    /// The card as a PNG on the clipboard, email addresses masked.
+    private func copyImage(_ card: UsageCardModel) {
+        var card = card
+        card.account = card.account.map { UsageFormat.personal($0, hide: true) }
+        card.notice = nil
+        let view = UsageCardView(model: card)
+            .padding(16)
+            .frame(width: StatusPanelController.width)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        if let image = renderer.nsImage { actions.run(.copyImage(image)) }
     }
 
     private var footer: some View {
@@ -369,9 +523,12 @@ struct StatusPanelView: View {
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
             Spacer()
+            PanelIconButton(showsUsed ? "Show what's left" : "Show what's used",
+                            symbol: showsUsed ? "chart.bar.fill" : "chart.bar") { showsUsed.toggle() }
+            PanelIconButton(hidePersonal ? "Show email addresses" : "Hide email addresses",
+                            symbol: hidePersonal ? "eye.slash" : "eye") { hidePersonal.toggle() }
             PanelIconButton("Settings (⌘,)", symbol: "gearshape") { actions.run(.settings(.general)) }
                 .keyboardShortcut(",")
-            PanelIconButton("About Agent Profiles", symbol: "info.circle") { actions.run(.settings(.about)) }
             PanelIconButton("Quit Agent Profiles (⌘Q)", symbol: "power") { actions.run(.quit) }
                 .keyboardShortcut("q")
         }

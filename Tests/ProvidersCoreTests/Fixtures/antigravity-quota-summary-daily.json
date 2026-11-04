@@ -1,0 +1,19 @@
+{
+  "response": {
+    "groups": [
+      {
+        "displayName": "Gemini Models",
+        "buckets": [
+          {"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.8, "resetTime": "2026-11-05T15:48:04Z"},
+          {"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.7, "resetTime": "2026-11-10T18:40:27Z"}
+        ]
+      },
+      {
+        "displayName": "Claude and GPT models",
+        "buckets": [
+          {"bucketId": "3p-5h", "window": "5h", "remainingFraction": 0.99}
+        ]
+      }
+    ]
+  }
+}

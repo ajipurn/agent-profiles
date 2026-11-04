@@ -1,0 +1,36 @@
+{
+  "response": {
+    "description": "Models within a group share limits.",
+    "groups": [
+      {
+        "displayName": "Gemini Models",
+        "description": "Gemini models",
+        "buckets": [
+          {"bucketId": "gemini-weekly", "displayName": "Weekly Limit Remaining", "description": "Weekly limit", "window": "weekly", "remaining": {"remainingFraction": 0.86}, "resetTime": "2026-11-10T18:40:27Z"},
+          {"bucketId": "gemini-5h", "displayName": "Five Hour Limit Remaining", "description": "5-hour limit", "window": "5h", "remainingFraction": 0.95, "resetTime": "2026-11-05T15:48:04Z"}
+        ]
+      },
+      {
+        "displayName": "Gemini 4 Argon",
+        "description": "For paid Pro plans, Argon quota is separate.",
+        "buckets": [
+          {"bucketId": "gemini-argon-wtu-weekly", "displayName": "Weekly Limit Remaining", "window": "weekly", "remainingFraction": 0.6, "resetTime": "2026-11-10T18:40:27Z"}
+        ]
+      },
+      {
+        "displayName": "Claude and GPT models",
+        "description": "3p models",
+        "buckets": [
+          {"bucketId": "3p-weekly", "displayName": "Weekly Limit Remaining", "window": "weekly", "remainingFraction": 0.89, "resetTime": "2026-11-10T02:38:46Z"},
+          {"bucketId": "3p-5h", "displayName": "Five Hour Limit Remaining", "window": "5h", "remaining": {"case": "remainingFraction", "value": 1}, "resetTime": "2026-11-05T17:29:19Z"}
+        ]
+      },
+      {
+        "displayName": "Gemini 3 Flash Image",
+        "buckets": [
+          {"bucketId": "gemini-3-flash-image", "remainingFraction": 0.1, "resetTime": "2026-11-05T17:00:00Z"}
+        ]
+      }
+    ]
+  }
+}

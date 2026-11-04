@@ -1,0 +1,4 @@
+{
+  "octocorp.ghe.com": { "user": "enterprise-fake", "oauth_token": "gho_fakeToken4" },
+  "github.com": { "user": "hosts-user-fake", "oauth_token": "gho_fakeToken2" }
+}

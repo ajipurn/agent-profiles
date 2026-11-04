@@ -1,0 +1,8 @@
+{
+  "access_token": "ya29.fake-gemini-access-token",
+  "scope": "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+  "token_type": "Bearer",
+  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJmYWtlLWdlbWluaS1jbGllbnQuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLCJzdWIiOiIxMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImdlbWluaS51c2VyQGV4YW1wbGUuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsImlhdCI6MTc5Mzg3OTQwMCwiZXhwIjoxNzkzODgzMDAwfQ.fake-signature",
+  "expiry_date": 1793883600000,
+  "refresh_token": "1//fake-gemini-refresh-token"
+}

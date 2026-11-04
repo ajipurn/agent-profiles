@@ -18,11 +18,37 @@ public struct ProfileUsage: Equatable, Sendable {
         }
     }
 
+    /// A weekly window that covers only some models ("Sonnet", "Opus").
+    public struct ScopedWindow: Equatable, Sendable {
+        public let name: String
+        public let window: Window
+    }
+
+    /// Pay-as-you-go spend beyond the plan, in the account's currency.
+    public struct ExtraUsage: Equatable, Sendable {
+        public let used: Double
+        /// Monthly cap; nil when none is set.
+        public let limit: Double?
+        public let currency: String
+    }
+
     public let fiveHour: Window?
     public let sevenDay: Window?
+    public var scoped: [ScopedWindow] = []
+    public var extraUsage: ExtraUsage?
     /// When Claude fetched these numbers (cache entry mtime).
     public let asOf: Date
     public let orgID: String
+
+    init(fiveHour: Window?, sevenDay: Window?, scoped: [ScopedWindow] = [], extraUsage: ExtraUsage? = nil,
+         asOf: Date, orgID: String) {
+        self.fiveHour = fiveHour
+        self.sevenDay = sevenDay
+        self.scoped = scoped
+        self.extraUsage = extraUsage
+        self.asOf = asOf
+        self.orgID = orgID
+    }
 }
 
 /// Finds the cached `GET /api/organizations/<org>/usage` response inside a
@@ -136,13 +162,54 @@ public enum UsageReader {
 
         func window(_ key: String) -> ProfileUsage.Window? {
             guard let raw = obj[key] as? [String: Any],
-                  let percent = raw["utilization"] as? Double else { return nil }
+                  let percent = number(raw["utilization"]) else { return nil }
             return .init(percent: percent, resetsAt: (raw["resets_at"] as? String).flatMap(parseISO))
         }
         let five = window("five_hour")
         let seven = window("seven_day")
         guard five != nil || seven != nil else { return nil }
-        return ProfileUsage(fiveHour: five, sevenDay: seven, asOf: asOf, orgID: orgID)
+        return ProfileUsage(fiveHour: five, sevenDay: seven,
+                            scoped: scopedWindows(obj, legacy: window),
+                            extraUsage: extraUsage(obj["extra_usage"]),
+                            asOf: asOf, orgID: orgID)
+    }
+
+    /// Per-model weekly windows. Older responses name them `seven_day_sonnet`
+    /// and `seven_day_opus`; newer ones list `kind: "weekly_scoped"` entries in
+    /// `limits` with the model's display name. Either way, one per model.
+    static func scopedWindows(_ obj: [String: Any], legacy: (String) -> ProfileUsage.Window?) -> [ProfileUsage.ScopedWindow] {
+        var found: [ProfileUsage.ScopedWindow] = []
+        func add(_ name: String, _ window: ProfileUsage.Window?) {
+            guard let window, !found.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return }
+            found.append(.init(name: name, window: window))
+        }
+        for entry in obj["limits"] as? [Any] ?? [] {
+            guard let limit = entry as? [String: Any], limit["kind"] as? String == "weekly_scoped",
+                  let model = (limit["scope"] as? [String: Any])?["model"] as? [String: Any],
+                  let name = (model["display_name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+                  let percent = number(limit["percent"]) else { continue }
+            add(name, .init(percent: percent, resetsAt: (limit["resets_at"] as? String).flatMap(parseISO)))
+        }
+        add("Sonnet", legacy("seven_day_sonnet"))
+        add("Opus", legacy("seven_day_opus"))
+        return found
+    }
+
+    /// `extra_usage` amounts are in minor units (cents) with `decimal_places`.
+    static func extraUsage(_ value: Any?) -> ProfileUsage.ExtraUsage? {
+        guard let object = value as? [String: Any], object["is_enabled"] as? Bool == true else { return nil }
+        let scale = pow(10, number(object["decimal_places"]) ?? 2)
+        let limit = number(object["monthly_limit"]).flatMap { $0 > 0 ? $0.rounded() / scale : nil }
+        return .init(used: (number(object["used_credits"]) ?? 0).rounded() / scale,
+                     limit: limit,
+                     currency: (object["currency"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "USD")
+    }
+
+    static func number(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
     }
 
     static func parseISO(_ s: String) -> Date? {

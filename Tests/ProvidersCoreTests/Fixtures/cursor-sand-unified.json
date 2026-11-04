@@ -1,0 +1,8 @@
+{
+  "currentPeriodStart": "2026-11-03T00:00:00Z",
+  "nextResetTimestampUtc": "2026-11-10T00:00:00Z",
+  "usagePercent": 64,
+  "hasAvailableUsage": true,
+  "includedLimitZero": false,
+  "isUnified": true
+}

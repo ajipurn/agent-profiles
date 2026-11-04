@@ -1,0 +1,21 @@
+{
+  "login": "free-user-fake",
+  "access_type_sku": "free_limited_copilot",
+  "copilot_plan": "free",
+  "chat_enabled": true,
+  "quota_reset_date": "2026-11-20",
+  "quota_snapshots": {
+    "chat": {
+      "entitlement": 50, "overage_count": 0, "overage_permitted": false, "percent_remaining": 76.0,
+      "quota_id": "chat", "remaining": 38, "unlimited": false
+    },
+    "completions": {
+      "entitlement": 2000, "overage_count": 0, "overage_permitted": false, "percent_remaining": 75.0,
+      "quota_id": "completions", "remaining": 1500, "unlimited": false
+    },
+    "premium_interactions": {
+      "entitlement": 50, "overage_count": 0, "overage_permitted": false, "percent_remaining": 100.0,
+      "quota_id": "premium_interactions", "remaining": 50, "unlimited": false
+    }
+  }
+}

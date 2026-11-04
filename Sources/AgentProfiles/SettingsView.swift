@@ -2,9 +2,10 @@ import SwiftUI
 import ServiceManagement
 import AgentUI
 import CodexProfilesUI
+import ProvidersCore
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, claude, codex, about
+    case general, notifications, claude, codex, providers, about
 
     static let storageKey = "settingsPane"
 
@@ -13,8 +14,10 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .notifications: "Notifications"
         case .claude: "Claude"
         case .codex: "Codex"
+        case .providers: "More Providers"
         case .about: "About"
         }
     }
@@ -22,6 +25,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .notifications: "bell.badge.fill"
+        case .providers: "square.grid.2x2.fill"
         case .claude: ProviderStyle.claude.symbol
         case .codex: ProviderStyle.codex.symbol
         case .about: "info.circle.fill"
@@ -40,6 +45,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: .gray
+        case .notifications: .red
+        case .providers: .purple
         case .claude: ProviderStyle.claude.accent
         case .codex: ProviderStyle.codex.accent
         case .about: .blue
@@ -51,6 +58,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     let claude: AppState
     let codex: AppModel
+    let providers: ExtraProvidersModel
     let updates: UpdateController
     @AppStorage(SettingsPane.storageKey) private var pane: SettingsPane = .general
 
@@ -80,6 +88,8 @@ struct SettingsView: View {
             Group {
                 switch pane {
                 case .general: GeneralSettingsView(updates: updates)
+                case .notifications: NotificationSettingsView()
+                case .providers: ProvidersSettingsView(providers: providers)
                 case .claude: ClaudeSettingsView(state: claude)
                 case .codex: CodexSettingsView(model: codex)
                 case .about: AboutView(updates: updates)
@@ -97,6 +107,14 @@ struct GeneralSettingsView: View {
     @AppStorage(Preferences.showPercentKey) private var showPercent = true
     @AppStorage(Preferences.followActiveAppKey) private var followActiveApp = true
     @AppStorage(Preferences.showCostKey) private var showCost = true
+    @AppStorage(Preferences.menuBarMetricKey) private var metric: MenuBarMetric = .session
+    @AppStorage(Preferences.panelHotKeyKey) private var panelHotKey = true
+    @AppStorage(Preferences.followTightestKey) private var followTightest = false
+    @AppStorage(UsageDisplay.showsUsedKey) private var showsUsed = false
+    @AppStorage(UsageDisplay.resetClockKey) private var resetAsClock = false
+    @AppStorage(UsageDisplay.hidePersonalKey) private var hidePersonal = false
+    @AppStorage(UsageDisplay.sortByHeadroomKey) private var sortByHeadroom = true
+    @AppStorage(StatusModel.enabledKey) private var statusChecks = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -107,12 +125,30 @@ struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Follow the active app", isOn: $followActiveApp)
+                Toggle("Follow whichever has less left", isOn: $followTightest)
                 Toggle("Show percentage next to the icon", isOn: $showPercent)
-                Toggle("Show estimated cost in the menu", isOn: $showCost)
+                Picker("Percentage shows", selection: $metric) {
+                    ForEach(MenuBarMetric.allCases) { Text($0.title).tag($0) }
+                }
+                .disabled(!showPercent)
+                Toggle("Open the panel with ⌘⌥0", isOn: $panelHotKey)
             } header: {
                 Text("Menu Bar")
             } footer: {
-                Text("The icon's top bar is the session window, the bottom bar the weekly one. The menu shows both providers. When following the active app, bringing Claude or Codex to the front switches the icon to it; other apps, including terminals, keep the last one.")
+                Text("The icon's top bar is the session window, the bottom bar the weekly one. When following the active app, bringing Claude or Codex to the front switches the icon to it; other apps, including terminals, keep the last one. Otherwise “less left” shows the provider closer to its limit.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Show estimated cost", isOn: $showCost)
+                Toggle("Show used instead of left", isOn: $showsUsed)
+                Toggle("Show resets as clock times", isOn: $resetAsClock)
+                Toggle("Sort accounts by what they have left", isOn: $sortByHeadroom)
+                Toggle("Hide email addresses", isOn: $hidePersonal)
+                Toggle("Show provider status incidents", isOn: $statusChecks)
+            } header: {
+                Text("Panel")
+            } footer: {
+                Text("Clicking a percentage or a reset time in the panel flips it too. Hiding email addresses helps when sharing your screen. Status incidents come from each provider's public status page.")
                     .foregroundStyle(.secondary)
             }
             Section("Startup") {
@@ -175,14 +211,14 @@ struct AboutView: View {
                 .font(.title2.weight(.semibold))
             Text("Version \(version)")
                 .foregroundStyle(.secondary)
-            Text("Switch Claude and Codex accounts and keep an eye on their usage limits.")
+            Text("Switch Claude and Codex accounts and keep an eye on every AI tool's usage limits.")
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
             Button("Check for Updates…") { updates.checkForUpdates() }
                 .disabled(!updates.canCheckForUpdates)
                 .padding(.top, 6)
             Spacer().frame(height: 10)
-            Text("Menu design inspired by CodexBar by Peter Steinberger.")
+            Text("Inspired by OpenUsage by Robin Ebers and CodexBar by Peter Steinberger.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("Not affiliated with Anthropic or OpenAI.")
@@ -191,5 +227,114 @@ struct AboutView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+struct NotificationSettingsView: View {
+    @AppStorage(UsageAlertSettings.thresholdsKey) private var thresholds = true
+    @AppStorage(UsageAlertSettings.warningKey) private var warningLeft = 25.0
+    @AppStorage(UsageAlertSettings.criticalKey) private var criticalLeft = 10.0
+    @AppStorage(UsageAlertSettings.willRunOutKey) private var willRunOut = true
+    @AppStorage(UsageAlertSettings.resetsKey) private var resets = true
+    @AppStorage(UsageAlertSettings.useItOrLoseItKey) private var useItOrLoseIt = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Low usage", isOn: $thresholds)
+                LabeledContent("Warn at") {
+                    HStack {
+                        Slider(value: $warningLeft, in: 15...60, step: 5)
+                            .frame(width: 180)
+                        Text("\(Int(warningLeft))% left").monospacedDigit().frame(width: 64, alignment: .trailing)
+                    }
+                }
+                .disabled(!thresholds)
+                LabeledContent("Critical at") {
+                    HStack {
+                        Slider(value: $criticalLeft, in: 5...25, step: 5)
+                            .frame(width: 180)
+                        Text("\(Int(criticalLeft))% left").monospacedDigit().frame(width: 64, alignment: .trailing)
+                    }
+                }
+                .disabled(!thresholds)
+            } header: {
+                Text("Limits")
+            } footer: {
+                Text("Each limit notifies once per window, at the deepest level it has reached. A critical Claude or Codex alert suggests the account with the most left; clicking the notification switches to it.")
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: warningLeft) { _, value in if criticalLeft >= value { criticalLeft = max(5, value - 5) } }
+            .onChange(of: criticalLeft) { _, value in if warningLeft <= value { warningLeft = min(60, value + 5) } }
+            Section {
+                Toggle("Will run out before it resets", isOn: $willRunOut)
+                Toggle("A used-up limit has reset", isOn: $resets)
+                Toggle("Weekly limit resets soon with most of it unused", isOn: $useItOrLoseIt)
+            } header: {
+                Text("Pace")
+            } footer: {
+                Text("“Will run out” uses the burn rate so far in the window. The weekly reminder fires a day before the reset when more than half is left.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Turns extra providers on or off. Each one reads the sign-in its own app
+/// or CLI keeps on this Mac and asks that service for usage.
+struct ProvidersSettingsView: View {
+    @ObservedObject var providers: ExtraProvidersModel
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(providers.providers, id: \.id) { provider in
+                    row(provider)
+                }
+            } header: {
+                Text("Providers")
+            } footer: {
+                Text("Turned on, a provider reads the sign-in its own app or CLI left on this Mac and asks that service for your usage every five minutes. Agent Profiles never changes those files. Sign in or out in the provider's own tool.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func row(_ provider: any UsageProvider) -> some View {
+        let style = ExtraProvidersModel.style(provider)
+        let signedIn = providers.isSignedIn(provider)
+        let state = providers.states[provider.id]
+        return HStack(spacing: 10) {
+            ProviderLogo(style, size: 14)
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(style.accent.gradient))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.name)
+                Group {
+                    if !signedIn {
+                        Text("Not signed in on this Mac")
+                    } else if let error = state?.error, providers.isEnabled(provider.id) {
+                        Text(error).foregroundStyle(.orange)
+                    } else if let snapshot = state?.snapshot, providers.isEnabled(provider.id) {
+                        Text([snapshot.account, snapshot.plan, UsageFormat.updatedText(snapshot.fetchedAt)]
+                            .compactMap { $0 }.joined(separator: " · "))
+                    } else {
+                        Text("Signed in")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(get: { providers.isEnabled(provider.id) },
+                                     set: { providers.setEnabled(provider.id, $0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
     }
 }

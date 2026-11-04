@@ -1,0 +1,23 @@
+{
+  "billingCycleStart": "2026-10-20T00:00:00.000Z",
+  "billingCycleEnd": "2026-11-20T00:00:00.000Z",
+  "membershipType": "pro",
+  "limitType": "user",
+  "isUnlimited": false,
+  "autoModelSelectedDisplayMessage": "You've used 42% of your included Auto + Composer usage",
+  "namedModelSelectedDisplayMessage": "You've used 12% of your included API usage",
+  "individualUsage": {
+    "plan": {
+      "enabled": true,
+      "used": 1500,
+      "limit": 2000,
+      "remaining": 500,
+      "breakdown": {"included": 1500, "bonus": 0, "total": 1500},
+      "autoPercentUsed": 42.5,
+      "apiPercentUsed": 12.25,
+      "totalPercentUsed": 75
+    },
+    "onDemand": {"enabled": true, "used": 500, "limit": 10000, "remaining": 9500}
+  },
+  "teamUsage": {}
+}

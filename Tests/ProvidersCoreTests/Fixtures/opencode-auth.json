@@ -1,0 +1,4 @@
+{
+  "anthropic": { "type": "oauth", "access": "fake-anthropic-access", "refresh": "fake-anthropic-refresh", "expires": 1700000000000 },
+  "opencode-go": { "type": "api", "key": "go_FAKEauthJSONkey0000" }
+}

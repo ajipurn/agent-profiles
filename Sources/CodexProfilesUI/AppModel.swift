@@ -460,9 +460,12 @@ public final class AppModel {
         }
     }
 
+    /// Shown when the active login's usage request is refused.
+    public static let signInAgainMessage = "Sign in again to refresh usage."
+
     private func usageMessage(for error: Error) -> String {
         if let usageError = error as? UsageFetchError, usageError == .unauthorized {
-            return "Sign in again to refresh usage."
+            return Self.signInAgainMessage
         }
         return "Unable to load usage. Try again."
     }

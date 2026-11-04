@@ -1,0 +1,10 @@
+{
+  "token": {
+    "access_token": "ya29.fake-antigravity-access-token",
+    "token_type": "Bearer",
+    "refresh_token": "1//fake-antigravity-refresh-token",
+    "expiry": "2026-11-05T13:00:00.123456789Z"
+  },
+  "auth_method": "consumer",
+  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiI0Mi1mYWtlLWFudGlncmF2aXR5LWNsaWVudC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbSIsInN1YiI6IjEwMDAwMDAwMDAwMDAwMDAwMDAwMyIsImVtYWlsIjoiYWd5LnVzZXJAZXhhbXBsZS5jb20iLCJpYXQiOjE3OTM4Nzk0MDAsImV4cCI6MTc5Mzg4MzAwMH0.fake-signature"
+}

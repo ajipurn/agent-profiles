@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// Global hotkeys: ⌘⌥1…⌘⌥9 switch to the Nth Claude profile, ⌃⌥1…⌃⌥9 to
-/// the Nth Codex account. Carbon hotkeys because they are the one
+/// the Nth Codex account, ⌘⌥0 opens the panel. Carbon hotkeys because they are the one
 /// global-shortcut API that needs no Accessibility or Input Monitoring
 /// permission.
 @MainActor
@@ -10,12 +10,28 @@ enum HotKeys {
     enum Group: UInt32 {
         case claude = 0
         case codex = 1
+        /// ⌘⌥0; the index is always 0.
+        case panel = 2
 
         var modifiers: Int {
             switch self {
-            case .claude: cmdKey | optionKey
+            case .claude, .panel: cmdKey | optionKey
             case .codex: controlKey | optionKey
             }
+        }
+    }
+
+    private static var panelRef: EventHotKeyRef?
+
+    /// Registers or drops ⌘⌥0, following Settings.
+    static func setPanelShortcut(_ on: Bool) {
+        if on, panelRef == nil {
+            let id = EventHotKeyID(signature: 0x4350_484B, id: Group.panel.rawValue * 100)
+            RegisterEventHotKey(UInt32(kVK_ANSI_0), UInt32(Group.panel.modifiers), id,
+                                GetApplicationEventTarget(), 0, &panelRef)
+        } else if !on, let ref = panelRef {
+            UnregisterEventHotKey(ref)
+            panelRef = nil
         }
     }
 
@@ -55,5 +71,6 @@ enum HotKeys {
                 refs.append(ref)
             }
         }
+        setPanelShortcut(Preferences.panelHotKey)
     }
 }

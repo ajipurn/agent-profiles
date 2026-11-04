@@ -34,8 +34,25 @@ final class CostModel: ObservableObject {
                           tokens: summary?.amount(period, .claude).tokens ?? 0),
                 CostSlice(style: .codex, dollars: summary?.amount(period, .codex).dollars ?? 0,
                           tokens: summary?.amount(period, .codex).tokens ?? 0),
-            ])
+            ], models: (summary?.topModels(period) ?? []).map(Self.line))
         }
+    }
+
+    /// The last 30 days, oldest first, for the history bars.
+    var days: [CostDayData] {
+        guard let summary else { return [] }
+        return Day.lastDays(30, now: summary.scannedAt ?? Date()).map { day, date in
+            let amounts = summary.daily[day] ?? [:]
+            return CostDayData(date: date, slices: [
+                CostSlice(style: .claude, dollars: amounts[.claude]?.dollars ?? 0, tokens: amounts[.claude]?.tokens ?? 0),
+                CostSlice(style: .codex, dollars: amounts[.codex]?.dollars ?? 0, tokens: amounts[.codex]?.tokens ?? 0),
+            ], models: summary.topModels(on: day).map(Self.line))
+        }
+    }
+
+    private static func line(_ entry: (CostSummary.ModelKey, CostAmount)) -> CostModelLine {
+        CostModelLine(style: entry.0.provider == .claude ? .claude : .codex, model: entry.0.model,
+                      dollars: entry.1.dollars, tokens: entry.1.tokens)
     }
 
     var note: String {

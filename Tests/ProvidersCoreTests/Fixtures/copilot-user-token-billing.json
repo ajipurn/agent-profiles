@@ -1,0 +1,13 @@
+{
+  "login": "biz-user-fake",
+  "copilot_plan": "business",
+  "token_based_billing": true,
+  "quota_reset_date": "2026-12-01",
+  "quota_snapshots": {
+    "chat": { "entitlement": -1, "remaining": -1, "percent_remaining": 100.0, "quota_id": "chat", "unlimited": true },
+    "premium_interactions": {
+      "entitlement": 0, "remaining": 0, "percent_remaining": 100.0, "credits_used": 31.5,
+      "quota_id": "premium_interactions", "unlimited": false
+    }
+  }
+}
