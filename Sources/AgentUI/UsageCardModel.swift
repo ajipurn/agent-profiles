@@ -112,12 +112,14 @@ public struct UsageAccount: Equatable, Sendable, Identifiable {
 
     /// The one account with more left than every other (and well clear, over
     /// 40%), worth a "Most left" mark. None when several tie — all at 100%,
-    /// say — or only one is listed.
+    /// say — or only one is listed. Compared as the whole percents the panel
+    /// shows, so two accounts that both read "100%" tie.
     public static func leader(in accounts: [UsageAccount]) -> UsageAccount? {
+        func shown(_ account: UsageAccount) -> Double? { account.usable?.rounded() }
         guard accounts.count > 1,
-              let best = accounts.max(by: { ($0.usable ?? 0) < ($1.usable ?? 0) }),
-              let top = best.usable, top > 40 else { return nil }
-        let rest = accounts.filter { $0.id != best.id }.compactMap(\.usable)
+              let best = accounts.max(by: { (shown($0) ?? 0) < (shown($1) ?? 0) }),
+              let top = shown(best), top > 40 else { return nil }
+        let rest = accounts.filter { $0.id != best.id }.compactMap(shown)
         return rest.allSatisfy({ $0 < top }) ? best : nil
     }
 

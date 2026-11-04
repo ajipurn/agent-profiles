@@ -73,6 +73,7 @@ import Testing
         #expect(UsageAccount.leader(in: [account("a", 88, 65), account("b", 100, 100), account("c", 9, 36)])?.id == "b")
         #expect(UsageAccount.leader(in: [account("a", 30, 90), account("b", 20, 100)]) == nil, "not well clear")
         #expect(UsageAccount.leader(in: [account("a", 100, 100)]) == nil, "a lone account needs no mark")
+        #expect(UsageAccount.leader(in: [account("a", 99.6, 100), account("b", 100, 100)]) == nil, "both read 100%")
     }
 
     @Test func accountUsableIsTheTighterWindow() {
