@@ -2,10 +2,9 @@
 // Draws the Agent Profiles app icon and writes Resources/AppIcon.icns plus a
 // preview at docs/icon.png. Usage: swift scripts/make-icon.swift [repo root]
 //
-// The mark: a dial with a fine scale and two gauge arcs chasing each other
-// round it, Codex's blue over Claude's orange, each ending in a white knob.
-// It reads as a swap (switching accounts) and as two meters (the usage each
-// one has left).
+// The mark is the menu bar icon, enlarged: two meters, a thick session bar
+// over a thinner weekly bar, each partly filled. Claude's orange fills the
+// top one and Codex's blue the bottom one.
 import AppKit
 
 let root = URL(fileURLWithPath: CommandLine.arguments.count > 1
@@ -57,11 +56,11 @@ func drawBackground() {
     NSGraphicsContext.saveGraphicsState()
     shape.addClip()
     NSGradient(starting: ink, ending: inkDeep)!.draw(in: body, angle: -90)
-    // Faint provider-colored light behind each arc.
+    // Faint provider-colored light behind each meter.
     NSGradient(colors: [orange.withAlphaComponent(0.20), orange.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: 512, y: 300), radius: 0, toCenter: NSPoint(x: 512, y: 300), radius: 420, options: [])
-    NSGradient(colors: [blue.withAlphaComponent(0.16), blue.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: 512, y: 724), radius: 0, toCenter: NSPoint(x: 512, y: 724), radius: 420, options: [])
+        .draw(fromCenter: NSPoint(x: 400, y: 640), radius: 0, toCenter: NSPoint(x: 400, y: 640), radius: 440, options: [])
+    NSGradient(colors: [blue.withAlphaComponent(0.18), blue.withAlphaComponent(0)])!
+        .draw(fromCenter: NSPoint(x: 340, y: 330), radius: 0, toCenter: NSPoint(x: 340, y: 330), radius: 400, options: [])
     // Top sheen.
     NSGradient(colors: [NSColor.white.withAlphaComponent(0.09), NSColor.white.withAlphaComponent(0)])!
         .draw(in: CGRect(x: body.minX, y: body.midY, width: body.width, height: body.height / 2), angle: -90)
@@ -73,92 +72,63 @@ func drawBackground() {
     edge.stroke()
 }
 
-/// Fine scale around the edge of the dial, every fifth tick stronger.
-func drawTicks(center: CGPoint, radius: CGFloat) {
-    for i in 0..<72 {
-        let major = i % 6 == 0
-        let angle = CGFloat(i) / 72 * 2 * .pi
-        let inner = radius - (major ? 26 : 14)
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
-        path.line(to: NSPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius))
-        path.lineWidth = major ? 5 : 3
-        path.lineCapStyle = .round
-        NSColor.white.withAlphaComponent(major ? 0.26 : 0.11).setStroke()
-        path.stroke()
-    }
-}
+/// Layout of the menu bar icon (UsageIcon.swift, 18 pt canvas): a 15 x 6
+/// session meter 3 pt above a 15 x 4 weekly meter. Scaled up here, a little
+/// slimmer, since at this size the menu bar's proportions read as switches.
+let unit: CGFloat = 38
+let meterWidth = 16.4 * unit
+let sessionHeight = 5.2 * unit, weeklyHeight = 3.5 * unit, meterGap = 2.6 * unit
+let meterX = (canvas - meterWidth) / 2
+let weeklyY = (canvas - (sessionHeight + meterGap + weeklyHeight)) / 2
+let sessionY = weeklyY + weeklyHeight + meterGap
 
-/// A gauge arc (degrees, counterclockwise from `from` to `to`) with a
-/// gradient along its sweep and a white knob at the leading end.
-func drawArc(center: CGPoint, radius: CGFloat, width: CGFloat, from: CGFloat, to: CGFloat,
-             color: NSColor, deep: NSColor) {
-    let arc = NSBezierPath()
-    arc.appendArc(withCenter: center, radius: radius, startAngle: from, endAngle: to, clockwise: false)
-    arc.lineWidth = width
-    arc.lineCapStyle = .round
-    withShadow(color.withAlphaComponent(0.60), blur: 60) {
-        color.setStroke()
-        arc.stroke()
+/// A capsule track with a recessed look and a glowing fill of `share`.
+func drawMeter(_ rect: CGRect, share: CGFloat, color: NSColor, deep: NSColor) {
+    let radius = rect.height / 2
+    let track = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+    // Recessed track: darker than the body, lit along its lower lip.
+    NSGradient(colors: [inkDeep.withAlphaComponent(0.95), ink.withAlphaComponent(0.85)])!.draw(in: track, angle: -90)
+    NSGraphicsContext.saveGraphicsState()
+    track.addClip()
+    withShadow(NSColor.black.withAlphaComponent(0.55), blur: 18, offset: NSSize(width: 0, height: -6)) {
+        let rim = NSBezierPath(roundedRect: rect.insetBy(dx: -20, dy: -20), xRadius: radius + 20, yRadius: radius + 20)
+        rim.append(track.reversed)
+        NSColor.black.setFill()
+        rim.fill()
     }
-    // Fill the stroke's outline with a gradient running tail → head.
-    let cg = NSGraphicsContext.current!.cgContext
-    cg.saveGState()
-    cg.addPath(arc.cgPath)
-    cg.setLineWidth(width)
-    cg.setLineCap(.round)
-    cg.replacePathWithStrokedPath()
-    cg.clip()
-    let rad = { (deg: CGFloat) in deg * .pi / 180 }
-    let tail = CGPoint(x: center.x + cos(rad(from)) * radius, y: center.y + sin(rad(from)) * radius)
-    let head = CGPoint(x: center.x + cos(rad(to)) * radius, y: center.y + sin(rad(to)) * radius)
-    NSGradient(starting: deep, ending: color)!.draw(from: tail, to: head, options: [.drawsBeforeStartingLocation, .drawsAfterEndingLocation])
-    // Glass: a light band along the outer edge.
-    let sheen = NSBezierPath()
-    sheen.appendArc(withCenter: center, radius: radius + width * 0.22, startAngle: from, endAngle: to, clockwise: false)
-    sheen.lineWidth = width * 0.22
-    sheen.lineCapStyle = .round
-    NSColor.white.withAlphaComponent(0.22).setStroke()
-    sheen.stroke()
-    cg.restoreGState()
+    NSGraphicsContext.restoreGraphicsState()
+    track.lineWidth = 3
+    NSColor.white.withAlphaComponent(0.10).setStroke()
+    track.stroke()
 
-    let d = width * 0.6
-    let knob = CGRect(x: head.x - d / 2, y: head.y - d / 2, width: d, height: d)
-    withShadow(NSColor.black.withAlphaComponent(0.35), blur: 16, offset: NSSize(width: 0, height: -5)) {
-        NSColor.white.setFill()
-        NSBezierPath(ovalIn: knob).fill()
+    // The fill: an inset capsule, so it reads as liquid in a tube.
+    let inset = rect.height * 0.1
+    let inner = rect.insetBy(dx: inset, dy: inset)
+    let fillRect = CGRect(x: inner.minX, y: inner.minY,
+                          width: max(inner.height, inner.width * share), height: inner.height)
+    let fillRadius = fillRect.height / 2
+    let fill = NSBezierPath(roundedRect: fillRect, xRadius: fillRadius, yRadius: fillRadius)
+    withShadow(color.withAlphaComponent(0.65), blur: 56) {
+        color.setFill()
+        fill.fill()
     }
-    NSGradient(colors: [NSColor.white, NSColor(white: 0.88, alpha: 1)])!
-        .draw(in: NSBezierPath(ovalIn: knob), angle: -90)
+    NSGradient(starting: deep, ending: color)!.draw(in: fill, angle: 0)
+    // Glass: light fading down from the top edge.
+    NSGraphicsContext.saveGraphicsState()
+    fill.addClip()
+    NSGradient(colorsAndLocations: (NSColor.white.withAlphaComponent(0.34), 0),
+               (NSColor.white.withAlphaComponent(0.08), 0.45),
+               (NSColor.white.withAlphaComponent(0), 1))!
+        .draw(in: fillRect, angle: -90)
+    NSGraphicsContext.restoreGraphicsState()
 }
 
 func drawIcon() {
     drawBackground()
-    let center = CGPoint(x: canvas / 2, y: canvas / 2)
-    drawTicks(center: center, radius: 392)
-    // Two arcs chasing each other round the dial: a swap, and two meters.
-    // Sized to fill the dial, so the middle reads as a hub, not a hole.
-    let radius: CGFloat = 282, width: CGFloat = 158
-    // Recessed face inside the arcs, lit by the arcs around it.
-    let faceRadius = radius - width / 2 - 26
-    let faceRect = CGRect(x: center.x - faceRadius, y: center.y - faceRadius,
-                          width: faceRadius * 2, height: faceRadius * 2)
-    let face = NSBezierPath(ovalIn: faceRect)
-    NSGradient(colors: [inkDeep.withAlphaComponent(0.9), ink.withAlphaComponent(0.6)])!.draw(in: face, angle: -90)
-    NSGraphicsContext.saveGraphicsState()
-    face.addClip()
-    NSGradient(colors: [blue.withAlphaComponent(0.16), blue.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: 0,
-              toCenter: NSPoint(x: center.x, y: faceRect.maxY), radius: faceRadius * 1.1, options: [])
-    NSGradient(colors: [orange.withAlphaComponent(0.16), orange.withAlphaComponent(0)])!
-        .draw(fromCenter: NSPoint(x: center.x, y: faceRect.minY), radius: 0,
-              toCenter: NSPoint(x: center.x, y: faceRect.minY), radius: faceRadius * 1.1, options: [])
-    NSGraphicsContext.restoreGraphicsState()
-    face.lineWidth = 3
-    NSColor.white.withAlphaComponent(0.08).setStroke()
-    face.stroke()
-    drawArc(center: center, radius: radius, width: width, from: 30, to: 150, color: blue, deep: blueDeep)
-    drawArc(center: center, radius: radius, width: width, from: 210, to: 330, color: orange, deep: orangeDeep)
+    drawMeter(CGRect(x: meterX, y: sessionY, width: meterWidth, height: sessionHeight),
+              share: 0.74, color: orange, deep: orangeDeep)
+    drawMeter(CGRect(x: meterX, y: weeklyY, width: meterWidth, height: weeklyHeight),
+              share: 0.46, color: blue, deep: blueDeep)
 }
 
 func png(pixels: Int) -> Data {
