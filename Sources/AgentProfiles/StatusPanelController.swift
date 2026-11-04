@@ -378,7 +378,7 @@ struct StatusPanelView: View {
     private func accounts(_ provider: MenuBarProvider) -> some View {
         let list = sorted(provider == .claude ? claude.menuAccounts : codex.menuAccounts)
         let enabled = provider == .claude ? claude.canSwitchDesktop : codex.canSwitch
-        let best = list.count > 1 ? AlertCenter.best(list, for: "Session")?.id : nil
+        let best = UsageAccount.leader(in: list)?.id
         let tint = provider == .claude ? ProviderStyle.claude.accent : ProviderStyle.codex.accent
         if !list.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
