@@ -192,9 +192,12 @@ public struct CursorProvider: UsageProvider {
                   limit > 0 else { return nil }
             return used / limit * 100
         }
-        let averaged = auto.flatMap { auto in api.map { (auto + $0) / 2 } }
-        let total = ProviderJSON.double(plan?["totalPercentUsed"]) ?? averaged ?? api ?? auto
-            ?? share(plan) ?? share(overall) ?? share(pooled) ?? 0
+        // Split up: one long `??` chain is too slow to type-check for Xcode 16's compiler.
+        let averaged: Double? = auto.flatMap { auto in api.map { (auto + $0) / 2 } }
+        let reported: Double? = ProviderJSON.double(plan?["totalPercentUsed"]) ?? averaged
+        let fromPercents: Double? = reported ?? api ?? auto
+        let fromBlocks: Double? = share(plan) ?? share(overall) ?? share(pooled)
+        let total: Double = fromPercents ?? fromBlocks ?? 0
 
         let gpt4 = requestUsage?["gpt-4"] as? [String: Any]
         let requestLimit = ProviderJSON.double(gpt4?["maxRequestUsage"]).flatMap { $0 > 0 ? $0 : nil }
