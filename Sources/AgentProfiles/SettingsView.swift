@@ -3,9 +3,10 @@ import ServiceManagement
 import AgentUI
 import CodexProfilesUI
 import ProvidersCore
+import UsageHistoryCore
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, notifications, claude, codex, providers, about
+    case general, notifications, claude, codex, providers, history, about
 
     static let storageKey = "settingsPane"
 
@@ -18,6 +19,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .providers: "More Providers"
+        case .history: "History"
         case .about: "About"
         }
     }
@@ -29,6 +31,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .providers: "square.grid.2x2.fill"
         case .claude: ProviderStyle.claude.symbol
         case .codex: ProviderStyle.codex.symbol
+        case .history: "chart.xyaxis.line"
         case .about: "info.circle.fill"
         }
     }
@@ -49,6 +52,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .providers: .purple
         case .claude: ProviderStyle.claude.accent
         case .codex: ProviderStyle.codex.accent
+        case .history: .indigo
         case .about: .blue
         }
     }
@@ -60,6 +64,7 @@ struct SettingsView: View {
     let codex: AppModel
     let providers: ExtraProvidersModel
     let updates: UpdateController
+    let history: UsageHistory
     @AppStorage(SettingsPane.storageKey) private var pane: SettingsPane = .general
 
     var body: some View {
@@ -92,12 +97,24 @@ struct SettingsView: View {
                 case .providers: ProvidersSettingsView(providers: providers)
                 case .claude: ClaudeSettingsView(state: claude)
                 case .codex: CodexSettingsView(model: codex)
+                case .history: HistoryView(history: history, accounts: historyAccounts)
                 case .about: AboutView(updates: updates)
                 }
             }
             .navigationTitle(pane.title)
         }
         .frame(minWidth: 720, minHeight: 520)
+    }
+
+    /// Accounts in the order the menus list them: Claude profiles as arranged
+    /// in Settings, Codex accounts in hotkey order.
+    private func historyAccounts(_ provider: UsageSample.Provider) -> [HistoryAccount] {
+        switch provider {
+        case .claude:
+            claude.manager.ordered(claude.profiles).map { HistoryAccount(id: $0, name: $0) }
+        case .codex:
+            codex.hotkeyAccountIDs.map { HistoryAccount(id: $0, name: codex.accountName($0) ?? "Codex account") }
+        }
     }
 }
 

@@ -40,6 +40,13 @@ affiliated with or endorsed by Anthropic, OpenAI or any other provider.
 - It is an estimate: Claude Desktop chats keep no local token log, and on a
   subscription it is the value of what you used, not a bill.
 
+**History**
+- Settings → History shows how each account's session or weekly limit filled
+  over the last 7 or 30 days, one line per account. Hover for the values at a
+  moment; the table below gives each account's latest, peak and how often the
+  limit reached 100%. The readings are kept while the app runs (at most one
+  per account every ten minutes, for 30 days, on this Mac only).
+
 **Notifications**
 - Low usage at a warning and a critical level you choose (25% and 10% left by
   default), and when a limit is used up. A critical Claude or Codex alert
@@ -122,9 +129,30 @@ Ed25519 signature before installing. Building from source avoids the warning.
 | `agentprofiles://claude/<name>` | switches Claude Desktop |
 | `agentprofiles://claude-cli/<name>` | switches the Claude Code profile (`Default` = plain `~/.claude`) |
 | `agentprofiles://codex/<name>` | switches Codex (saved name, label or email) |
-| `agentprofiles://open[/<pane>]` | opens Settings (`general`, `notifications`, `claude`, `codex`, `providers`, `about`) |
+| `agentprofiles://open[/<pane>]` | opens Settings (`general`, `notifications`, `claude`, `codex`, `providers`, `history`, `about`) |
 
 Claude Profiles' `claudeprofiles://switch|switch-cli|open` still work.
+
+### Command line
+
+The app carries an `agent-profiles` command. Link it into a folder on your
+PATH once:
+
+```sh
+ln -s "/Applications/Agent Profiles.app/Contents/Helpers/agent-profiles" /usr/local/bin/
+```
+
+| Command | Does |
+| --- | --- |
+| `agent-profiles` (or `status`) | the active Claude Desktop profile with its usage, the Claude Code profile and the Codex account |
+| `agent-profiles list [claude\|claude-cli\|codex]` | profiles and accounts, `*` on the active ones |
+| `agent-profiles usage [claude\|codex]` | Claude Desktop usage as Claude last saw it; the active Codex account's usage, fetched now |
+| `agent-profiles cost` | the estimated cost, as in the panel |
+| `agent-profiles history [claude\|codex] [--days N]` | each account's peaks over the last 7 days (up to 30) and how often a limit filled up, from the readings behind Settings → History; `--json` adds every reading |
+| `agent-profiles switch claude\|claude-cli\|codex <name>` | switches through the app, like the URLs above, and waits until it is done (`--no-wait` doesn't) |
+
+Add `--json` for scripts and status lines. Reading needs nothing running; a
+switch opens the app if it is not running.
 
 ## Existing logins
 
@@ -169,6 +197,9 @@ Sources/ClaudeProfilesCore/  Claude profiles and cached usage, no UI
 Sources/CodexProfilesCore/   Codex accounts and usage API, no UI
 Sources/ProvidersCore/       extra providers and status pages, no UI
 Sources/UsageCostCore/       cost estimate from local logs, no UI
+Sources/UsageHistoryCore/    a month of usage readings for History, no UI
+Sources/AgentCLI/            the agent-profiles command, no UI
+Sources/AgentProfilesCLI/    its executable
 Sources/AgentUI/             panel cards, bars, alerts, menu bar icon
 Sources/CodexProfilesUI/     Codex model, settings pane, updater
 Sources/AgentProfiles/       app shell, panel, Settings, Claude pane

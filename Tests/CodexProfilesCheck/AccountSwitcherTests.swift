@@ -151,6 +151,7 @@ enum CodexProfilesCheck {
             ("formats quota reset like ChatGPT", formatResetCaption),
             ("keeps a custom nickname when refreshing tokens", applyTokenRefreshPreservesIdentity),
             ("looks for codex on PATH and in its usual folders", codexCandidatePaths),
+            ("matches an account by saved name, shown name or email", matchAccountNames),
         ]
         #if os(macOS)
         cases += [
@@ -330,6 +331,17 @@ enum CodexProfilesCheck {
         try expect(usage.windows.isEmpty, "nonfinite server value should not become a quota")
         let partial = CodexUsage(limitReached: true, primary: UsageWindow(usedPercent: 100), secondary: UsageWindow(usedPercent: 20))
         try expectEqual(partial.secondary?.remainingDisplay, 80, "one exhausted window must not erase another window")
+    }
+
+    static func matchAccountNames() throws {
+        let identity = try AccountIdentityParser.parse(authJSON: AuthFixtures.authJSON(
+            email: "work@example.com", name: "Ada", accountID: "acc-work", plan: "team"))
+        let named = Profile(name: "Work", identity: identity)
+        try expect(named.matches("work") && named.matches("WORK@example.com"), "saved name and email, any case")
+        try expect(!named.matches("wor") && !named.matches(""), "only whole names")
+        let renamed = Profile(name: "old@example.com", identity: identity)
+        try expect(renamed.matches("work@example.com") && renamed.matches("old@example.com"), "shown and saved name")
+        try expect(!Profile(name: "No Email").matches(""), "an empty name matches nothing")
     }
 
     static func parseIdentity() throws {

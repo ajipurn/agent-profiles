@@ -6,6 +6,7 @@ import AgentUI
 import ClaudeProfilesCore
 import CodexProfilesCore
 import CodexProfilesUI
+import UsageHistoryCore
 
 @main
 struct AgentProfilesApp: App {
@@ -38,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var cost: CostModel!
     private var extras: ExtraProvidersModel!
     private var status: StatusModel!
+    private var history: UsageHistory!
     private var claudeDemoHome: URL?
 
     private var statusItem: NSStatusItem!
@@ -91,6 +93,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             state = AppState()
         }
         codex = AppModel(demo: isDemo)
+        history = UsageHistory(home: claudeDemoHome ?? FileManager.default.homeDirectoryForCurrentUser)
+        if isDemo {
+            // Made-up weeks for the sample accounts; the preview's own fixed
+            // numbers are not recorded on top of them.
+            let samples = HistoryDemo.samples(claude: state.profiles, codex: codex.profiles.map(\.id))
+            let history = history!
+            Task { try? await history.replace(with: samples) }
+        } else {
+            state.history = history
+        }
         updates = UpdateController(enabled: !isDemo) { [weak self] in
             self?.canRelaunchForUpdate ?? false
         }
@@ -231,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func observeCodex() {
         withObservationTracking {
             _ = codex.cardModel
+            _ = codex.profileUsage
             _ = codex.isBusy
             _ = codex.pendingNewLogin
             _ = codex.isCompletingLogin
@@ -242,10 +255,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.wasCompletingLogin = self.codex.isCompletingLogin
                 self.reportCodexSwitch()
                 self.evaluateAlerts()
+                self.recordCodexHistory()
                 self.updateStatusItem()
                 self.observeCodex()
             }
         }
+    }
+
+    /// Every Codex usage fetch, kept for Settings → History.
+    private func recordCodexHistory() {
+        guard !isDemo else { return }
+        let samples = codex.profileUsage.compactMap { id, load in load.usage.map { UsageSample.codex(id, $0) } }
+        let history = history!
+        Task { await history.record(samples) }
     }
 
     // MARK: Codex switching and alerts
@@ -439,7 +461,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showSettings(_ pane: SettingsPane?) {
         if let pane { UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.storageKey) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView(claude: state, codex: codex, providers: extras, updates: updates))
+            let host = NSHostingController(rootView: SettingsView(claude: state, codex: codex, providers: extras,
+                                                                  updates: updates, history: history))
             let window = NSWindow(contentViewController: host)
             window.title = "Agent Profiles Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]

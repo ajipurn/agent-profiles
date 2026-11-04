@@ -32,11 +32,13 @@ def validate(out, require_universal=False):
         info = plistlib.loads(zipped.read("Agent Profiles.app/Contents/Info.plist"))
         if require_universal:
             with tempfile.TemporaryDirectory() as folder:
-                executable = Path(folder, "AgentProfiles")
-                executable.write_bytes(zipped.read("Agent Profiles.app/Contents/MacOS/AgentProfiles"))
-                # Newer lipo checks one architecture per call.
-                for arch in ("arm64", "x86_64"):
-                    subprocess.run(["lipo", str(executable), "-verify_arch", arch], check=True)
+                # The app and the agent-profiles command it carries.
+                for inside in ("MacOS/AgentProfiles", "Helpers/agent-profiles"):
+                    executable = Path(folder, Path(inside).name)
+                    executable.write_bytes(zipped.read(f"Agent Profiles.app/Contents/{inside}"))
+                    # Newer lipo checks one architecture per call.
+                    for arch in ("arm64", "x86_64"):
+                        subprocess.run(["lipo", str(executable), "-verify_arch", arch], check=True)
     for key, expected in bundle_values(config).items():
         assert info.get(key) == expected, f"Bundle metadata mismatch: {key}"
     print("Release URLs, archive length, version, minimum OS, and embedded update settings verified")
