@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0
+
+- Switch Account shows each account's 5-hour and weekly limits side by side, sorted by what is left, with the account that has the most left marked.
+- Claude shows its per-model weekly limits (Sonnet, Opus) and extra usage spend; Codex shows Spark limits, credits, a workspace credit limit and limit resets waiting to be used.
+- More providers: Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok, each off until turned on in Settings → More Providers. They read the sign-in their own tool keeps on this Mac and never change it. An Overview tab lists every provider, closest to running out first. These are new; please report any that show the wrong numbers.
+- Notifications at a warning and a critical level you choose, when a limit will run out before it resets, when a used-up limit has reset, when a sign-in stops working and, if turned on, a day before a weekly limit resets with most of it unused. They replace the single 10% alert and live in Settings → Notifications.
+- Status-page incidents for each provider show on its card and tab.
+- The cost card opens a 30-day chart with the most expensive models; hover a day for its breakdown.
+- Settings → History charts each account's session and weekly usage over the last 7 or 30 days, from readings kept on this Mac.
+- An `agent-profiles` command for scripts and status lines: status, list, usage, cost, history and switch, each with `--json`. It ships inside the app; the README shows how to link it onto your PATH.
+- Click a percentage to show used instead of left, or a reset to show a clock time. Also new: hide email addresses, Copy Image, ⌘⌥0 to open the panel, a choice of window for the menu bar percentage, and following whichever provider has less left.
+- New app icon, the menu bar's two-bar meter, and a refreshed panel.
+- Fixed restoring shared session history from a backup after a profile was renamed: each profile now gets its own sessions back.
+
 ## 1.3.9
 
 - Claude profiles can now be deleted down to an empty list, including the active and last profile, so you can keep only Codex or only Claude profiles.
