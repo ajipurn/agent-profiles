@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2
+
+- Switch Account shows when each account's 5-hour and weekly limits reset, next to their meters, so you can see when a used-up account is usable again without hovering. Resets follow the "Show resets as clock times" setting.
+
 ## 1.4.1
 
 - Fixed "100%" wrapping onto two lines in Switch Account and the Overview tab; the meters stay aligned.
