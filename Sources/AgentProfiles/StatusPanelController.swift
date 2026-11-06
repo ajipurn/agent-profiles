@@ -379,6 +379,7 @@ struct StatusPanelView: View {
         let list = sorted(provider == .claude ? claude.menuAccounts : codex.menuAccounts)
         let enabled = provider == .claude ? claude.canSwitchDesktop : codex.canSwitch
         let best = UsageAccount.leader(in: list)?.id
+        let showsResets = list.contains { $0.hasPendingReset() }
         let tint = provider == .claude ? ProviderStyle.claude.accent : ProviderStyle.codex.accent
         if !list.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
@@ -394,7 +395,8 @@ struct StatusPanelView: View {
                 .padding(.horizontal, 4)
                 VStack(spacing: 0) {
                     ForEach(list) { account in
-                        AccountRowView(account: account, tint: tint, isEnabled: enabled, isBest: account.id == best) {
+                        AccountRowView(account: account, tint: tint, isEnabled: enabled, isBest: account.id == best,
+                                       showsResets: showsResets) {
                             actions.run(provider == .claude ? .switchClaude(account.id) : .switchCodex(account.id))
                         }
                     }

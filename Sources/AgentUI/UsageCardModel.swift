@@ -27,6 +27,14 @@ public struct UsageLimit: Equatable, Sendable, Identifiable {
     public var level: UsagePace.Verdict {
         UsagePace(remaining: remaining, resetsAt: nil, window: nil).verdict
     }
+
+    /// The reset worth showing next to a compact meter: still ahead, on a
+    /// window that has been used. A window that reads 100% has nothing to
+    /// get back, so its countdown would only be noise.
+    public func pendingReset(now: Date = Date()) -> Date? {
+        guard let resetsAt, resetsAt > now, let remaining, remaining.rounded() < 100 else { return nil }
+        return resetsAt
+    }
 }
 
 /// Where the current burn rate lands by the reset (as OpenUsage does it):
@@ -121,6 +129,11 @@ public struct UsageAccount: Equatable, Sendable, Identifiable {
               let top = shown(best), top > 40 else { return nil }
         let rest = accounts.filter { $0.id != best.id }.compactMap(shown)
         return rest.allSatisfy({ $0 < top }) ? best : nil
+    }
+
+    /// Either window has a reset worth showing.
+    public func hasPendingReset(now: Date = Date()) -> Bool {
+        session?.pendingReset(now: now) != nil || weekly?.pendingReset(now: now) != nil
     }
 
     /// What this account can actually use now: the tighter of its two
@@ -245,6 +258,17 @@ public enum UsageFormat {
         if date.timeIntervalSince(now) < 6 * 86_400 {
             return date.formatted(.dateTime.weekday(.abbreviated)) + " " + time
         }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// A reset short enough for an account row: "2h 13m", "4d 2h", or with
+    /// `clock` "3:40 PM" within a day, "Fri" this week, "Nov 12" later. The
+    /// row's tooltip has the full time.
+    public static func shortReset(_ date: Date, now: Date = Date(), clock: Bool) -> String {
+        let ahead = date.timeIntervalSince(now)
+        guard clock else { return duration(ahead) }
+        if ahead < 86_400 { return date.formatted(date: .omitted, time: .shortened) }
+        if ahead < 6 * 86_400 { return date.formatted(.dateTime.weekday(.abbreviated)) }
         return date.formatted(.dateTime.month(.abbreviated).day())
     }
 

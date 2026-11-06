@@ -334,23 +334,28 @@ public enum PanelColors {
 }
 
 /// One switchable account: initials, name, then its 5-hour and weekly
-/// windows as two stacked meters (the menu bar icon's layout). Lights up on
+/// windows as two stacked meters (the menu bar icon's layout). With
+/// `showsResets`, each meter ends in when that window resets. Lights up on
 /// hover; the tooltip spells out both resets.
 public struct AccountRowView: View {
     let account: UsageAccount
     let tint: Color
     let isEnabled: Bool
     let isBest: Bool
+    /// Room for a reset column; the list turns it on for every row at once
+    /// so the bars stay lined up.
+    let showsResets: Bool
     let action: () -> Void
     @State private var hovering = false
     @AppStorage(UsageDisplay.hidePersonalKey) private var hidePersonal = false
 
     public init(account: UsageAccount, tint: Color = .accentColor, isEnabled: Bool, isBest: Bool = false,
-                action: @escaping () -> Void) {
+                showsResets: Bool = false, action: @escaping () -> Void) {
         self.account = account
         self.tint = tint
         self.isEnabled = isEnabled
         self.isBest = isBest
+        self.showsResets = showsResets
         self.action = action
     }
 
@@ -383,9 +388,11 @@ public struct AccountRowView: View {
                     }
                 }
                 Spacer(minLength: 6)
-                VStack(alignment: .trailing, spacing: 5) {
-                    MiniMeter(label: "5h", limit: account.session)
-                    MiniMeter(label: "Wk", limit: account.weekly)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    VStack(alignment: .trailing, spacing: 5) {
+                        MiniMeter(label: "5h", limit: account.session, now: context.date, showsReset: showsResets)
+                        MiniMeter(label: "Wk", limit: account.weekly, now: context.date, showsReset: showsResets)
+                    }
                 }
                 Image(systemName: "arrow.right")
                     .font(.system(size: 9, weight: .bold))
@@ -432,11 +439,15 @@ public struct AccountRowView: View {
     }
 }
 
-/// "5h ▬▬▬▬▱▱ 62%": one window of an account row.
+/// "5h ▬▬▬▬▱▱ 62% ↻ 2h 13m": one window of an account row.
 private struct MiniMeter: View {
     let label: String
     let limit: UsageLimit?
+    let now: Date
+    /// Keep a reset column, blank when this window has none pending.
+    let showsReset: Bool
     @AppStorage(UsageDisplay.showsUsedKey) private var showsUsed = false
+    @AppStorage(UsageDisplay.resetClockKey) private var resetAsClock = false
 
     var body: some View {
         let verdict = limit?.level ?? .comfortable
@@ -445,8 +456,9 @@ private struct MiniMeter: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .frame(width: 15, alignment: .leading)
+            // Narrower with a reset column, so the name keeps its room.
             UsageBar(remaining: limit?.remaining, tint: UsageTint.color(verdict), height: 4)
-                .frame(width: 64)
+                .frame(width: showsReset ? 34 : 64)
             // One line always: "100%" wrapped to "100 / %" in the 1.4.0 release build.
             Text(UsageFormat.compact(limit?.remaining, showsUsed: showsUsed))
                 .font(.system(size: 10.5, weight: .medium))
@@ -454,7 +466,29 @@ private struct MiniMeter: View {
                 .foregroundStyle(UsageTint.text(verdict))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minWidth: 34, alignment: .trailing)
+                .frame(minWidth: 30, alignment: .trailing)
+            if showsReset {
+                reset
+                    .frame(width: 50, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var reset: some View {
+        if let date = limit?.pendingReset(now: now) {
+            HStack(spacing: 2) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 7, weight: .bold))
+                Text(UsageFormat.shortReset(date, now: now, clock: resetAsClock))
+                    .font(.system(size: 9.5, weight: .medium))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(.secondary)
+        } else {
+            Color.clear.frame(height: 1)
         }
     }
 }
