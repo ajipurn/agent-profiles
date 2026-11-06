@@ -52,6 +52,12 @@ import Testing
 }
 
 @Suite struct UsageFormatTests {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func session(_ remaining: Double, resetsIn: TimeInterval = 3600) -> UsageLimit {
+        UsageLimit(title: "Session", remaining: remaining, resetsAt: now.addingTimeInterval(resetsIn), window: 5 * 3600)
+    }
+
     @Test func masksEmailsOnlyWhenAsked() {
         #expect(UsageFormat.personal("jane@example.com", hide: true) == "j•••@example.com")
         #expect(UsageFormat.personal("jane@example.com", hide: false) == "jane@example.com")
@@ -74,6 +80,29 @@ import Testing
         #expect(UsageAccount.leader(in: [account("a", 30, 90), account("b", 20, 100)]) == nil, "not well clear")
         #expect(UsageAccount.leader(in: [account("a", 100, 100)]) == nil, "a lone account needs no mark")
         #expect(UsageAccount.leader(in: [account("a", 99.6, 100), account("b", 100, 100)]) == nil, "both read 100%")
+    }
+
+    @Test func accountRowsShowResetsOnlyForUsedWindows() {
+        #expect(session(0, resetsIn: 2 * 3600).pendingReset(now: now) == now.addingTimeInterval(2 * 3600))
+        #expect(session(100).pendingReset(now: now) == nil, "nothing to get back at 100%")
+        #expect(session(99.6).pendingReset(now: now) == nil, "reads 100%")
+        #expect(session(40, resetsIn: -60).pendingReset(now: now) == nil, "already reset")
+        #expect(UsageLimit(title: "Session", remaining: nil, resetsAt: now.addingTimeInterval(60)).pendingReset(now: now) == nil)
+        let fresh = UsageAccount(id: "a", title: "a", session: session(100), weekly: nil)
+        let spent = UsageAccount(id: "b", title: "b", session: session(100), weekly: session(0, resetsIn: 86_400))
+        #expect(!fresh.hasPendingReset(now: now))
+        #expect(spent.hasPendingReset(now: now))
+    }
+
+    @Test func shortResetsFitAnAccountRow() {
+        #expect(UsageFormat.shortReset(now.addingTimeInterval(2 * 3600 + 13 * 60 + 30), now: now, clock: false) == "2h 13m")
+        #expect(UsageFormat.shortReset(now.addingTimeInterval(4 * 86_400 + 2 * 3600), now: now, clock: false) == "4d 2h")
+        let soon = now.addingTimeInterval(23 * 3600)
+        #expect(UsageFormat.shortReset(soon, now: now, clock: true) == soon.formatted(date: .omitted, time: .shortened))
+        let thisWeek = now.addingTimeInterval(4 * 86_400)
+        #expect(UsageFormat.shortReset(thisWeek, now: now, clock: true) == thisWeek.formatted(.dateTime.weekday(.abbreviated)))
+        let later = now.addingTimeInterval(20 * 86_400)
+        #expect(UsageFormat.shortReset(later, now: now, clock: true) == later.formatted(.dateTime.month(.abbreviated).day()))
     }
 
     @Test func accountUsableIsTheTighterWindow() {
