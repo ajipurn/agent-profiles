@@ -22,8 +22,11 @@ public struct UsageBar: View {
         GeometryReader { proxy in
             let value = remaining.map { showsUsed ? 100 - $0 : $0 } ?? 0
             let share = min(max(value / 100, 0), 1)
+            // A spent window's empty bar takes a faint wash of its tint, so
+            // it reads as "used up" rather than "no data".
+            let spent = remaining.map { $0.rounded() <= 0 } ?? false
             ZStack(alignment: .leading) {
-                Capsule().fill(PanelColors.track)
+                Capsule().fill(spent && !showsUsed ? tint.opacity(0.22) : PanelColors.track)
                 Capsule()
                     .fill(LinearGradient(colors: [tint.opacity(0.8), tint], startPoint: .leading, endPoint: .trailing))
                     .frame(width: share > 0 ? max(height, proxy.size.width * share) : 0)
@@ -333,21 +336,97 @@ public enum PanelColors {
     })
 }
 
+/// "Switch Account": the other accounts as a small table, with "5h" and
+/// "Week" column headings over each row's two windows. Thin separators
+/// between rows step aside for the hovered one.
+public struct AccountListView: View {
+    let accounts: [UsageAccount]
+    let tint: Color
+    let isEnabled: Bool
+    let onSelect: (UsageAccount) -> Void
+    @State private var hovered: String?
+
+    public init(accounts: [UsageAccount], tint: Color = .accentColor, isEnabled: Bool,
+                onSelect: @escaping (UsageAccount) -> Void) {
+        self.accounts = accounts
+        self.tint = tint
+        self.isEnabled = isEnabled
+        self.onSelect = onSelect
+    }
+
+    public var body: some View {
+        let best = UsageAccount.leader(in: accounts)?.id
+        let showsResets = accounts.contains { $0.hasPendingReset() }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: AccountRowView.columnSpacing) {
+                Text("Switch Account")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                heading("5h")
+                heading("Week")
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, AccountRowView.inset + 4)
+            VStack(spacing: 0) {
+                ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+                    if index > 0 {
+                        // A Divider, which snaps to whole pixels: a 0.5pt
+                        // rectangle vanished on a 1x display.
+                        Divider()
+                            .padding(.leading, AccountRowView.textLeading)
+                            .padding(.trailing, AccountRowView.inset)
+                            .opacity(isEnabled && [account.id, accounts[index - 1].id].contains(hovered) ? 0 : 0.6)
+                    }
+                    AccountRowView(account: account, tint: tint, isEnabled: isEnabled, isBest: account.id == best,
+                                   showsResets: showsResets) {
+                        onSelect(account)
+                    }
+                    .onHover { inside in
+                        if inside { hovered = account.id } else if hovered == account.id { hovered = nil }
+                    }
+                }
+            }
+            .padding(4)
+            .panelCard()
+            .animation(.easeOut(duration: 0.12), value: hovered)
+        }
+    }
+
+    private func heading(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .frame(width: AccountRowView.columnWidth, alignment: .leading)
+    }
+}
+
 /// One switchable account: initials, name, then its 5-hour and weekly
-/// windows as two stacked meters (the menu bar icon's layout). With
-/// `showsResets`, each meter ends in when that window resets. Lights up on
-/// hover; the tooltip spells out both resets.
+/// windows as two columns, each a percentage over a bar. With
+/// `showsResets`, a line under each bar says when that window resets. On
+/// hover the row lights up and the initials turn into an arrow; the tooltip
+/// spells out both resets.
 public struct AccountRowView: View {
     let account: UsageAccount
     let tint: Color
     let isEnabled: Bool
     let isBest: Bool
-    /// Room for a reset column; the list turns it on for every row at once
-    /// so the bars stay lined up.
+    /// Room for a reset line under the bars; the list turns it on for every
+    /// row at once so the rows keep one height.
     let showsResets: Bool
     let action: () -> Void
     @State private var hovering = false
     @AppStorage(UsageDisplay.hidePersonalKey) private var hidePersonal = false
+
+    /// Shared with AccountListView, which lines its headings and separators
+    /// up with these.
+    static let inset: CGFloat = 8
+    static let avatar: CGFloat = 26
+    static let avatarSpacing: CGFloat = 10
+    /// Fits the widest line, "↻ 11:40 PM" (56pt).
+    static let columnWidth: CGFloat = 64
+    static let columnSpacing: CGFloat = 10
+    static var textLeading: CGFloat { inset + avatar + avatarSpacing }
 
     public init(account: UsageAccount, tint: Color = .accentColor, isEnabled: Bool, isBest: Bool = false,
                 showsResets: Bool = false, action: @escaping () -> Void) {
@@ -360,15 +439,12 @@ public struct AccountRowView: View {
     }
 
     private var title: String { UsageFormat.personal(account.title, hide: hidePersonal) }
+    private var lit: Bool { hovering && isEnabled }
 
     public var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
-                Text(Self.initials(account.title))
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(tint)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(tint.opacity(0.14)))
+            HStack(spacing: Self.avatarSpacing) {
+                avatar
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
                         Text(title)
@@ -387,25 +463,21 @@ public struct AccountRowView: View {
                             .foregroundStyle(Color.green)
                     }
                 }
-                Spacer(minLength: 6)
+                .layoutPriority(1)
+                Spacer(minLength: 8)
                 TimelineView(.periodic(from: .now, by: 30)) { context in
-                    VStack(alignment: .trailing, spacing: 5) {
-                        MiniMeter(label: "5h", limit: account.session, now: context.date, showsReset: showsResets)
-                        MiniMeter(label: "Wk", limit: account.weekly, now: context.date, showsReset: showsResets)
+                    HStack(spacing: Self.columnSpacing) {
+                        WindowColumn(limit: account.session, now: context.date, showsReset: showsResets)
+                        WindowColumn(limit: account.weekly, now: context.date, showsReset: showsResets)
                     }
                 }
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 9)
-                    .opacity(hovering && isEnabled ? 1 : 0)
-                    .offset(x: hovering && isEnabled ? 0 : -4)
+                .fixedSize()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Self.inset)
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(hovering && isEnabled ? 0.07 : 0))
+                    .fill(Color.primary.opacity(lit ? 0.07 : 0))
             )
             .contentShape(Rectangle())
         }
@@ -419,6 +491,23 @@ public struct AccountRowView: View {
         .accessibilityLabel("\(title): \(UsageFormat.percent(account.session?.remaining)) of session, \(UsageFormat.percent(account.weekly?.remaining)) of week left")
     }
 
+    /// Initials, or an arrow while hovered: "switch to this one".
+    private var avatar: some View {
+        ZStack {
+            Circle().fill(lit ? tint : tint.opacity(0.14))
+            Text(Self.initials(account.title))
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(tint)
+                .opacity(lit ? 0 : 1)
+            Image(systemName: "arrow.right")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.white)
+                .opacity(lit ? 1 : 0)
+                .offset(x: lit ? 0 : -3)
+        }
+        .frame(width: Self.avatar, height: Self.avatar)
+    }
+
     private var tooltip: String {
         func line(_ name: String, _ limit: UsageLimit?) -> String {
             guard let limit, let remaining = limit.remaining else { return "\(name): no data yet" }
@@ -428,7 +517,8 @@ public struct AccountRowView: View {
             }
             return text
         }
-        return [line("Session (5h)", account.session), line("Weekly", account.weekly)].joined(separator: "\n")
+        // The name first: a long one is cut short in the row.
+        return [title, line("Session (5h)", account.session), line("Weekly", account.weekly)].joined(separator: "\n")
     }
 
     static func initials(_ name: String) -> String {
@@ -439,57 +529,50 @@ public struct AccountRowView: View {
     }
 }
 
-/// "5h ▬▬▬▬▱▱ 62% ↻ 2h 13m": one window of an account row.
-private struct MiniMeter: View {
-    let label: String
+/// "62%" over a bar, then "↻ 2h 13m": one window of an account row. The
+/// reset shows only once the window has been used, since a full one has
+/// nothing to get back.
+private struct WindowColumn: View {
     let limit: UsageLimit?
     let now: Date
-    /// Keep a reset column, blank when this window has none pending.
+    /// Keep the reset line, blank when this window has none pending.
     let showsReset: Bool
     @AppStorage(UsageDisplay.showsUsedKey) private var showsUsed = false
     @AppStorage(UsageDisplay.resetClockKey) private var resetAsClock = false
 
     var body: some View {
         let verdict = limit?.level ?? .comfortable
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .frame(width: 15, alignment: .leading)
-            // Narrower with a reset column, so the name keeps its room.
-            UsageBar(remaining: limit?.remaining, tint: UsageTint.color(verdict), height: 4)
-                .frame(width: showsReset ? 34 : 64)
+        VStack(alignment: .leading, spacing: 3) {
             // One line always: "100%" wrapped to "100 / %" in the 1.4.0 release build.
             Text(UsageFormat.compact(limit?.remaining, showsUsed: showsUsed))
-                .font(.system(size: 10.5, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .monospacedDigit()
-                .foregroundStyle(UsageTint.text(verdict))
+                .foregroundStyle(verdict == .comfortable ? Color.primary : UsageTint.text(verdict))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minWidth: 30, alignment: .trailing)
+            UsageBar(remaining: limit?.remaining, tint: UsageTint.color(verdict), height: 4)
             if showsReset {
                 reset
-                    .frame(width: 50, alignment: .leading)
             }
         }
+        .frame(width: AccountRowView.columnWidth, alignment: .leading)
     }
 
-    @ViewBuilder
     private var reset: some View {
-        if let date = limit?.pendingReset(now: now) {
-            HStack(spacing: 2) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 7, weight: .bold))
-                Text(UsageFormat.shortReset(date, now: now, clock: resetAsClock))
-                    .font(.system(size: 9.5, weight: .medium))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(.secondary)
-        } else {
-            Color.clear.frame(height: 1)
+        let date = limit?.pendingReset(now: now)
+        return HStack(spacing: 2) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 7, weight: .bold))
+            // Shrinks rather than spill into the next column, should a
+            // locale's clock time run longer than "11:40 PM".
+            Text(date.map { UsageFormat.shortReset($0, now: now, clock: resetAsClock) } ?? " ")
+                .font(.system(size: 9.5, weight: .medium))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .foregroundStyle(.secondary)
+        .opacity(date == nil ? 0 : 1) // blank, but the same height as one
     }
 }
 
