@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.3
+
+- Switch Account is laid out as a small table with "5h" and "Week" columns: each shows what is left over a wider bar, and when that limit resets underneath once it has been used. Long account names get more room, and the tooltip shows the full name.
+- A used-up limit's bar is tinted red instead of looking empty, so it no longer reads as missing data.
+
 ## 1.4.2
 
 - Switch Account shows when each account's 5-hour and weekly limits reset, next to their meters, so you can see when a used-up account is usable again without hovering. Resets follow the "Show resets as clock times" setting.
