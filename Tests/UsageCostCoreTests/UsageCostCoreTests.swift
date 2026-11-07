@@ -67,6 +67,29 @@ private func lines(_ rows: [String]) -> Data { Data(rows.joined(separator: "\n")
         #expect(sonnet.cost(of: usage, tier: .fast) == sonnet.cost(of: usage))
     }
 
+    /// Official prices (platform.claude.com, 2026-11-07): Haiku 5.5 is $0.10 /
+    /// $0.50 / $0.01 cache read / $0.125 5m write / $0.20 1h write, and 5x that
+    /// once a prompt (input + cache reads + cache writes) passes 100,000 tokens.
+    @Test func catalogPricesHaiku55WithItsLongContextTier() throws {
+        let haiku = try #require(Pricing.price(for: "claude-haiku-5-5"))
+        #expect(haiku.longContextThreshold == 100_000)
+        let mtok = TokenUsage(input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000,
+                              cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000)
+        // A 5M-token prompt is long: $0.50 + $2.50 + $0.05 + $0.625 + $1.
+        #expect(abs(haiku.cost(of: mtok) - 4.675) < 1e-9)
+        let short = TokenUsage(input: 40_000, output: 1_000_000, cacheRead: 30_000, cacheWrite5m: 30_000)
+        #expect(abs(haiku.cost(of: short) - (0.004 + 0.5 + 0.0003 + 0.00375)) < 1e-9)
+        // 100,001 prompt tokens, counting cache reads and writes, crosses the threshold.
+        let crossing = TokenUsage(input: 40_001, output: 0, cacheRead: 30_000, cacheWrite5m: 30_000)
+        #expect(abs(haiku.cost(of: crossing) - (40_001 * 5e-7 + 30_000 * 5e-8 + 30_000 * 6.25e-7)) < 1e-12)
+    }
+
+    /// Cache hits on Sonnet 5.5 cost 0.05x input ($0.10/MTok), not the usual 0.1x.
+    @Test func catalogPricesSonnet55CacheReadsAtFivePercent() throws {
+        let sonnet = try #require(Pricing.price(for: "claude-sonnet-5-5"))
+        #expect(sonnet.standard.cacheRead == 1e-07)
+    }
+
     @Test func catalogCarriesCodexTiersAndLongContext() {
         let sol = Pricing.price(for: "gpt-6.1-sol")!
         #expect(sol.priority != nil && sol.flex != nil)
