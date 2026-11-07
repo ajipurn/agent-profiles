@@ -72,18 +72,18 @@ final class AppState: ObservableObject {
         // The menu bar shows the active account's remaining 5-hour limit;
         // Claude refreshes its cached numbers as it runs, so poll them.
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refreshUsage() }
+            Task { @MainActor [weak self] in
+                self?.refreshUsage()
+                self?.checkLiveOrg()
+            }
         }
     }
 
     func refresh() {
-        // Symlink-only, so safe even while Claude runs — a freshly logged-in
-        // account joins the combined list the next time the panel opens.
-        // Claude's sidebar is already in memory, so new links need one restart.
-        if let linked = try? manager.prelinkKnownAccounts(), linked > 0, claude.isRunning {
-            Notifier.post("Session history linked",
-                          "Quit and reopen Claude once to see the combined list.")
-        }
+        // Symlink-only, so safe even while Claude runs — inactive accounts that
+        // logged in earlier are ready for their next switch. The active one is
+        // left to checkLiveOrg: its dir joins the pile only through a relink.
+        _ = try? manager.prelinkKnownAccounts()
         profiles = manager.profiles()
         activeProfile = manager.activeProfile()
         sharedHistoryEnabled = manager.sharedHistoryEnabled
@@ -107,6 +107,7 @@ final class AppState: ObservableObject {
             mode = .ready
         }
         if adoptExistingLogin() { return } // refreshed again inside
+        checkLiveOrg()
         refreshUsage()
         watchActiveProfileCache()
     }
@@ -273,10 +274,68 @@ final class AppState: ObservableObject {
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 guard let self, self.manager.activeProfile() == name else { return }
                 guard self.manager.hasAccountIDs(profile: name) else { continue }
-                let linked = (try? self.manager.prelinkKnownAccounts()) ?? 0
-                if linked > 0 { self.offerHistoryRestart(name) }
+                self.checkLiveOrg(firstLogin: true)
                 return
             }
+        }
+    }
+
+    // MARK: - Live org check
+
+    /// Last live-org problem already raised ("profile:state"), so polling
+    /// prompts once per occurrence instead of every minute.
+    private var liveOrgPrompted: String?
+
+    /// Claude picks the org it runs under itself, and from 4.23118 it refuses to
+    /// save sessions into a symlinked session dir. A relink while Claude is quit
+    /// puts the master in the org Claude last used; if Claude then runs under
+    /// another one, every new session is silently dropped until a restart relinks.
+    private func checkLiveOrg(firstLogin: Bool = false) {
+        guard sharedHistoryEnabled, claude.isRunning, !isSwitching, let name = activeProfile else {
+            liveOrgPrompted = nil
+            return
+        }
+        let state = manager.liveOrgState()
+        guard state == .linked || state == .detached else { liveOrgPrompted = nil; return }
+        let key = "\(name):\(state)"
+        guard liveOrgPrompted != key else { return }
+        liveOrgPrompted = key
+        // Alerts go out on the next turn: refresh() also runs inside init.
+        if state == .linked {
+            Task { @MainActor [weak self] in self?.offerSaveFixRestart(name) }
+        } else if firstLogin {
+            Task { @MainActor [weak self] in self?.offerHistoryRestart(name) }
+        } else {
+            Notifier.post("Session history linked",
+                          "Quit and reopen Claude once to see the combined list.")
+        }
+    }
+
+    private func offerSaveFixRestart(_ name: String) {
+        let alert = NSAlert()
+        alert.messageText = "Claude can’t save new sessions"
+        alert.informativeText = "“\(name)” is running under an organization whose session folder is "
+            + "still a link to the shared history, and Claude refuses to save there. Restart Claude "
+            + "to move the shared history into it. Sessions started since Claude switched organization "
+            + "were not saved; their transcripts stay in ~/.claude/projects (claude --resume)."
+        alert.addButton(withTitle: "Restart Claude")
+        alert.addButton(withTitle: "Later")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            Notifier.post("New sessions are not being saved",
+                          "Quit and reopen Claude to fix it.")
+            return
+        }
+        restartClaudeRelinking()
+    }
+
+    /// Quit, relink (handing the master to the org Claude now uses), relaunch.
+    /// The quit observer skips relinking while isSwitching, so do it here.
+    private func restartClaudeRelinking() {
+        run {
+            guard await self.claude.quit() else { return self.abortQuitFailed() }
+            self.relinkSharedHistoryIfEnabled()
+            self.claude.relaunch()
         }
     }
 
@@ -293,10 +352,7 @@ final class AppState: ObservableObject {
                           "Quit and reopen Claude whenever you like to see the combined list.")
             return
         }
-        run {
-            guard await self.claude.quit() else { return self.abortQuitFailed() }
-            self.claude.relaunch()
-        }
+        restartClaudeRelinking()
     }
 
     /// Creating a profile is just a folder — it never touches the running session.

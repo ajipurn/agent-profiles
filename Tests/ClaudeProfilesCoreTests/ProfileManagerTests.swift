@@ -744,6 +744,111 @@ final class ProfileManagerTests {
             == ["m1", "m2", "w1"], "island folded into the shared pile, nothing lost")
     }
 
+    // MARK: - Multi-org accounts (Claude 4.23118+ refuses a symlinked session dir)
+
+    static let orgA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" // sorts first
+    static let orgB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    /// Login of an account in two orgs, with Claude's per-org allowlist stamps.
+    func loginTwoOrgs(_ name: String, acct: String, stampA: String, stampB: String) throws {
+        try write(#"{"ownerAccountId":"\#(acct)"}"#,
+                  to: profile(name).appendingPathComponent("cowork-enabled-cli-ops.json"))
+        try write("""
+            {"dxt:allowlistLastUpdated:\(Self.orgA)": "\(stampA)",
+             "dxt:allowlistLastUpdated:\(Self.orgB)": "\(stampB)"}
+            """, to: profile(name).appendingPathComponent("config.json"))
+    }
+
+    /// The reported bug: an account in two orgs, Claude running under the one that
+    /// sorts second. Old pick (first real/existing/sorted) put the master in org A,
+    /// left org B a symlink, and Claude dropped every new session with ENOTDIR.
+    @Test func testSwitchPutsMasterInTheOrgClaudeLastUsed() throws {
+        let main = Acct(profile: "main", acct: "acct-main", org: "11111111-1111-1111-1111-111111111111")
+        let duoB = Acct(profile: "duo", acct: "acct-duo", org: Self.orgB)
+        try makeRealClaudeDir()
+        try pm.migrate(name: main.profile)
+        try pm.createProfile(name: duoB.profile)
+        try login(main)
+        try loginTwoOrgs("duo", acct: duoB.acct, stampA: "2026-11-04T12:09:34.872Z", stampB: "2026-11-07T09:31:23.899Z")
+        for i in 0..<3 { try claudeWrite("s-main-\(i)", as: main) }
+        try pm.enableSharedHistory(promoteActive: true)
+
+        try appSwitch(to: duoB)
+
+        #expect(isRealDir(activeOrg(duoB)), "org B (newest stamp) must hold the real master")
+        let duoA = Acct(profile: "duo", acct: duoB.acct, org: Self.orgA)
+        #expect(isSymlink(activeOrg(duoA)))
+        #expect(pm.liveOrgState() == .master)
+        try claudeWrite("s-duo", as: duoB)
+        #expect(visibleSessions(duoB) == ["s-main-0", "s-main-1", "s-main-2", "s-duo"])
+    }
+
+    /// Claude moves to the other org while running: the poll sees its session dir
+    /// is a link (saves failing), and the restart's relink hands it the master.
+    @Test func testLiveOrgStateFlagsOrgSwitchAndRelinkHealsIt() throws {
+        let main = Acct(profile: "main", acct: "acct-main", org: "11111111-1111-1111-1111-111111111111")
+        let duoA = Acct(profile: "duo", acct: "acct-duo", org: Self.orgA)
+        try makeRealClaudeDir()
+        try pm.migrate(name: main.profile)
+        try pm.createProfile(name: duoA.profile)
+        try login(main)
+        try loginTwoOrgs("duo", acct: duoA.acct, stampA: "2026-11-07T09:00:00Z", stampB: "2026-11-01T09:00:00Z")
+        try claudeWrite("m1", as: main)
+        try pm.enableSharedHistory(promoteActive: true)
+        try appSwitch(to: duoA)
+        #expect(pm.liveOrgState() == .master)
+
+        // Claude switches the account to org B (Claude refreshes B's stamp).
+        try loginTwoOrgs("duo", acct: duoA.acct, stampA: "2026-11-07T09:00:00Z", stampB: "2026-11-07T10:00:00Z")
+        #expect(pm.liveOrgState() == .linked, "B is still a symlink — Claude cannot save there")
+
+        try pm.enableSharedHistory(promoteActive: true) // restart: quit → relink → relaunch
+        let duoB = Acct(profile: "duo", acct: duoA.acct, org: Self.orgB)
+        #expect(pm.liveOrgState() == .master)
+        #expect(isRealDir(activeOrg(duoB)))
+        #expect(visibleSessions(duoB) == ["m1"])
+    }
+
+    @Test func testLastUsedOrgTakesNewestOfStampAndPluginList() throws {
+        let dir = profile("p")
+        try write(#"{"dxt:allowlistLastUpdated:\#(Self.orgA)": "2026-11-07T09:00:00.000Z"}"#,
+                  to: dir.appendingPathComponent("config.json"))
+        let orgs = [Self.orgA, Self.orgB]
+        #expect(pm.lastUsedOrg(of: dir, account: "acct", among: orgs) == Self.orgA)
+        // Claude touches plugin-list/<account>/<org> for the org it runs under —
+        // fresher than the allowlist stamp, which refreshes only now and then.
+        let listed = dir.appendingPathComponent("plugin-list/acct/\(Self.orgB)")
+        try fm.createDirectory(at: listed, withIntermediateDirectories: true)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_794_100_000)], ofItemAtPath: listed.path)
+        #expect(pm.lastUsedOrg(of: dir, account: "acct", among: orgs) == Self.orgB)
+        #expect(pm.lastUsedOrg(of: profile("none"), account: "acct", among: orgs) == nil)
+    }
+
+    /// prelinkKnownAccounts runs while Claude is up: a symlink at the active
+    /// account's own org dir would make Claude's first save fail, so it is left
+    /// for Claude to create — reported as detached until the next relink.
+    @Test func testPrelinkLeavesActiveAccountsOrgDirToClaude() throws {
+        let main = Acct(profile: "main", acct: "acct-main", org: "11111111-1111-1111-1111-111111111111")
+        let fresh = Acct(profile: "fresh", acct: "acct-fresh", org: "44444444-4444-4444-4444-444444444444")
+        try makeRealClaudeDir()
+        try pm.migrate(name: main.profile)
+        try login(main)
+        try claudeWrite("m1", as: main)
+        try pm.enableSharedHistory(promoteActive: true)
+        try pm.createProfile(name: fresh.profile)
+        try pm.switchTo(name: fresh.profile)
+        try login(fresh) // first login while Claude runs
+
+        try pm.prelinkKnownAccounts()
+        #expect(!isSymlink(activeOrg(fresh)) && itemType(activeOrg(fresh)) == nil,
+                "the active account's org dir must not be pre-linked")
+        #expect(pm.liveOrgState() == .detached)
+
+        try pm.enableSharedHistory(promoteActive: true)
+        #expect(pm.liveOrgState() == .master)
+        #expect(visibleSessions(fresh) == ["m1"])
+    }
+
     // MARK: - Display order
 
     @Test func testOrderedRespectsSavedOrderAndPutsUnknownNamesLast() throws {

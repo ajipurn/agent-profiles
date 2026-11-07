@@ -243,8 +243,11 @@ public final class ProfileManager: Sendable {
     }
 
     /// The active account's `<account>/<org>` path inside `tree`, once Claude has
-    /// recorded its ids. With several orgs, prefer one that already holds real
-    /// sessions (the one Claude just used), else any that exists, else the first —
+    /// recorded its ids. With several orgs it must be the org Claude will run
+    /// under: Claude Desktop 4.23118+ opens its session dir with O_NOFOLLOW and
+    /// refuses to save into a symlink (ENOTDIR), so a master in the wrong org
+    /// silently drops every new session. Without evidence of the live org, prefer
+    /// one that already holds real sessions, else any that exists, else the first —
     /// whichever we pick becomes the real master and the rest link to it, so every
     /// org of the account still resolves to the pile.
     private func activeOrgDir(in tree: URL, profile name: String) -> URL? {
@@ -252,10 +255,80 @@ public final class ProfileManager: Sendable {
         guard let account = accountID(of: dir) else { return nil }
         let orgs = orgIDs(of: dir).sorted()
         guard !orgs.isEmpty else { return nil }
-        let candidates = orgs.map { tree.appendingPathComponent(account).appendingPathComponent($0) }
+        let accountDir = tree.appendingPathComponent(account)
+        if let live = lastUsedOrg(of: dir, account: account, among: orgs) {
+            return accountDir.appendingPathComponent(live)
+        }
+        let candidates = orgs.map { accountDir.appendingPathComponent($0) }
         return candidates.first(where: isRealDirectory)
             ?? candidates.first(where: itemExists)
             ?? candidates.first
+    }
+
+    /// The org Claude last ran this account under, newest evidence wins: the
+    /// `dxt:allowlistLastUpdated:<org>` stamp in config.json and the mtime of
+    /// `plugin-list/<account>/<org>` — Claude refreshes both only for the org it
+    /// is signed in to. Nil when neither exists for any org.
+    func lastUsedOrg(of profileDir: URL, account: String, among orgs: [String]) -> String? {
+        let config = configJSON(of: profileDir) ?? [:]
+        let pluginList = profileDir.appendingPathComponent("plugin-list").appendingPathComponent(account)
+        var best: (org: String, at: Date)?
+        for org in orgs {
+            var stamps: [Date] = []
+            if let raw = config["dxt:allowlistLastUpdated:\(org)"] as? String, let at = Self.parseISODate(raw) {
+                stamps.append(at)
+            }
+            let listed = pluginList.appendingPathComponent(org)
+            if let at = (try? fm.attributesOfItem(atPath: listed.path))?[.modificationDate] as? Date {
+                stamps.append(at)
+            }
+            guard let at = stamps.max() else { continue }
+            if best == nil || at > best!.at { best = (org, at) } // orgs are sorted: ties keep the first
+        }
+        return best?.org
+    }
+
+    private static func parseISODate(_ raw: String) -> Date? {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let at = fmt.date(from: raw) { return at }
+        fmt.formatOptions = [.withInternetDateTime]
+        return fmt.date(from: raw)
+    }
+
+    public enum LiveOrgState: Equatable {
+        /// Sharing off, nothing active, or no telling which org Claude runs under.
+        case unknown
+        /// The live org dir is the real master in every shared tree — all good.
+        case master
+        /// The live org dir is a symlink: Claude cannot save sessions until a
+        /// promoting relink (Claude quit) makes it the real master.
+        case linked
+        /// Missing, or a real island beside the master: Claude saves fine but
+        /// shows only part of the combined list until the next relink.
+        case detached
+    }
+
+    /// Where the org Claude is (most likely) running under stands in the shared
+    /// trees. Read-only and cheap, so safe to poll while Claude runs.
+    public func liveOrgState() -> LiveOrgState {
+        guard sharedHistoryEnabled, let name = activeProfile() else { return .unknown }
+        let dir = profilesDir.appendingPathComponent(name)
+        guard let account = accountID(of: dir) else { return .unknown }
+        let orgs = orgIDs(of: dir).sorted()
+        guard let org = lastUsedOrg(of: dir, account: account, among: orgs) ?? (orgs.count == 1 ? orgs[0] : nil)
+        else { return .unknown }
+        var state = LiveOrgState.master
+        for tree in Self.sessionTrees {
+            let sharedTree = sharedDir.appendingPathComponent(tree)
+            let live = sharedTree.appendingPathComponent(account).appendingPathComponent(org)
+            if isSymlink(live) { return .linked }
+            let realOrgs = ((try? realSubdirectories(of: sharedTree)) ?? [])
+                .flatMap { (try? realSubdirectories(of: $0)) ?? [] }
+            if realOrgs.isEmpty { continue } // nothing shared in this tree yet
+            if !isRealDirectory(live) || realOrgs.count > 1 { state = .detached }
+        }
+        return state
     }
 
     /// Undo sharing. Merged sessions cannot be split back per account, so the
@@ -439,14 +512,17 @@ public final class ProfileManager: Sendable {
     }
 
     /// Safe while Claude is running: only creates missing symlinks — never merges,
-    /// moves, or deletes. Lets an account that just logged in join the combined
-    /// list without waiting for a full quit-time merge.
-    /// Returns how many links were created — nonzero means Claude needs a restart
-    /// to pick them up (its sidebar is already loaded in memory).
+    /// moves, or deletes. Lets an inactive account that logged in earlier join the
+    /// combined list without waiting for a full quit-time merge.
+    /// The active profile is skipped: Claude may be about to create its own org dir,
+    /// and a symlink there would make every save fail (Claude 4.23118+ refuses a
+    /// symlinked session dir). Its dir joins the pile at the next promoting relink.
+    /// Returns how many links were created.
     @discardableResult
     public func prelinkKnownAccounts() throws -> Int {
         guard sharedHistoryEnabled else { return 0 }
-        let names = profiles()
+        let active = activeProfile()
+        let names = profiles().filter { $0 != active }
         var created = 0
         for tree in Self.sessionTrees {
             let sharedTree = sharedDir.appendingPathComponent(tree)
@@ -508,11 +584,14 @@ public final class ProfileManager: Sendable {
         return json["ownerAccountId"] as? String
     }
 
+    private func configJSON(of profileDir: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: profileDir.appendingPathComponent("config.json")) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
     /// Org uuids from config.json `dxt:<name>:<org-uuid>` keys — written on login.
     private func orgIDs(of profileDir: URL) -> Set<String> {
-        guard let data = try? Data(contentsOf: profileDir.appendingPathComponent("config.json")),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return [] }
+        guard let json = configJSON(of: profileDir) else { return [] }
         var ids: Set<String> = []
         for key in json.keys where key.hasPrefix("dxt:") {
             let parts = key.split(separator: ":")
