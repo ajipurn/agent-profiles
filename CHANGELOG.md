@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.5
+
+- Antigravity usage now shows when you are signed in to the Antigravity app. Agent Profiles reads the sign-in the app keeps in the Keychain through macOS's own `security` tool, which that sign-in already trusts, so there is no Keychain prompt. Before, only the `agy` CLI's sign-in file was read, and app users saw "No Antigravity sign-in file found".
+- When Antigravity's sign-in expires while the app is closed, Agent Profiles renews it in memory and keeps showing your quota, instead of asking you to open Antigravity.
+
 ## 1.4.4
 
 - Fixed new Claude sessions going unsaved, and then disappearing, after switching to an account that belongs to two organizations while shared history is on. Since Claude Desktop 4.23118, Claude will not save into a linked session folder; the shared history now moves into the organization Claude actually uses.
