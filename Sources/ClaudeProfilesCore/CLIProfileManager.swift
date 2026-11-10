@@ -19,6 +19,9 @@ public final class CLIProfileManager: Sendable {
     public var cliDir: URL { PlatformPaths.appData(home: home).appendingPathComponent("Claude-Profiles/_cli") }
     public var profilesDir: URL { cliDir.appendingPathComponent("profiles") }
     public var shim: URL { cliDir.appendingPathComponent("bin/claude") }
+    /// Windows' shim: a batch file, which cmd, PowerShell and other programs
+    /// all find on PATH as `claude`.
+    public var windowsShim: URL { cliDir.appendingPathComponent("bin/claude.cmd") }
     public var profileTool: URL { cliDir.appendingPathComponent("bin/claude-profile") }
     private var activeFile: URL { cliDir.appendingPathComponent("active") }
 
@@ -27,10 +30,22 @@ public final class CLIProfileManager: Sendable {
     public static let pathLine =
         #"export PATH="\#(shellBase)/bin:$PATH""#
 
+    /// Windows: the PowerShell line that puts the shim first on the user's
+    /// PATH. Claude Code installs into the user's own folders, which the user
+    /// PATH lists, so first there is ahead of it.
+    public static let windowsPathLine =
+        #"[Environment]::SetEnvironmentVariable('Path', "$env:APPDATA\Claude-Profiles\_cli\bin;" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"#
+
     /// `_cli` as the scripts spell it, so they follow PlatformPaths too.
     static let shellBase = "$HOME/\(PlatformPaths.appDataRelativePath)/Claude-Profiles/_cli"
 
-    public var isSetUp: Bool { fm.isExecutableFile(atPath: shim.path) }
+    public var isSetUp: Bool {
+        #if os(Windows)
+        fm.fileExists(atPath: windowsShim.path)
+        #else
+        fm.isExecutableFile(atPath: shim.path)
+        #endif
+    }
 
     /// UI-only flag: hides the Default (~/.claude) row. Nothing about the
     /// default account itself changes — the shim still falls back to it.
@@ -111,8 +126,7 @@ public final class CLIProfileManager: Sendable {
     /// Idempotent: safe to re-run, always writes the current scripts.
     public func installShim() throws {
         #if os(Windows)
-        // The scripts are POSIX sh; Windows needs .cmd/.ps1 shims instead.
-        throw PlatformError.unsupported("The claude CLI shim")
+        try installWindowsShim()
         #else
         try fm.createDirectory(at: shim.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
@@ -122,6 +136,41 @@ public final class CLIProfileManager: Sendable {
         try FilePermissions.set(0o755, at: profileTool)
         #endif
     }
+
+    /// Writes `claude.cmd`; callable on any system so it can be tested.
+    func installWindowsShim() throws {
+        try fm.createDirectory(at: windowsShim.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createDirectory(at: profilesDir, withIntermediateDirectories: true)
+        try Data(Self.windowsShimScript.replacingOccurrences(of: "\n", with: "\r\n").utf8).write(to: windowsShim)
+    }
+
+    /// cmd's version of the shim: the profile named in `..\active` becomes
+    /// CLAUDE_CONFIG_DIR unless one is set already, then the next `claude` on
+    /// PATH that isn't this file runs with every argument. Lines and gotos
+    /// rather than blocks: a block expands %vars% before it runs, and delayed
+    /// expansion would eat a `!` in the arguments.
+    static let windowsShimScript = #"""
+        @echo off
+        setlocal DisableDelayedExpansion
+        set "SHIM_DIR=%~dp0"
+        if defined CLAUDE_CONFIG_DIR goto run
+        if not exist "%SHIM_DIR%..\active" goto run
+        set "ACTIVE="
+        set /p ACTIVE=<"%SHIM_DIR%..\active"
+        if not defined ACTIVE goto run
+        if not exist "%SHIM_DIR%..\profiles\%ACTIVE%\" goto run
+        for %%I in ("%SHIM_DIR%..\profiles\%ACTIVE%") do set "CLAUDE_CONFIG_DIR=%%~fI"
+        :run
+        for /f "delims=" %%C in ('where claude 2^>nul') do if /i not "%%~dpC"=="%SHIM_DIR%" (
+          set "TARGET=%%C"
+          goto found
+        )
+        echo claude: no Claude Code found on PATH besides this profile shim 1>&2
+        exit /b 9009
+        :found
+        "%TARGET%" %*
+        exit /b %ERRORLEVEL%
+        """#
 
     private func isDirectory(_ url: URL) -> Bool {
         (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeDirectory

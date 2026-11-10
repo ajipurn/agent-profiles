@@ -43,6 +43,7 @@ final class AgentCLITests {
     func run(
         _ arguments: [String],
         openInApp: (@Sendable (URL) throws -> Void)? = nil,
+        claudeDesktop: (any DesktopAppControl)? = nil,
         fetch: @escaping @Sendable (AuthSnapshot) async throws -> UsageFetchResult = { _ in throw Fixtures.Offline() },
         timeout: TimeInterval = 5
     ) async -> (code: Int32, out: String, err: String) {
@@ -52,6 +53,7 @@ final class AgentCLITests {
             output: { text in out.withLock { $0.append(text) } },
             errorOutput: { text in err.withLock { $0.append(text) } }
         )
+        context.claudeDesktop = claudeDesktop
         context.switchTimeout = timeout
         context.pollInterval = 0.01
         let code = await CLI.run(arguments, context: context)
@@ -339,10 +341,72 @@ final class AgentCLITests {
         #expect(cli.activeProfile() == "work") // its config folder made on first use
         #expect(await run(["switch", "claude-cli", "default"]).code == 0)
         #expect(cli.activeProfile() == nil)
-        // Claude Desktop has no app to ask here.
+        // Claude Desktop has no app to ask here, and no way to quit Claude.
         let desktop = await run(["switch", "claude", "personal"])
         #expect(desktop.code == 1)
-        #expect(desktop.err.contains("needs the Agent Profiles app"))
+        #expect(desktop.err.contains("isn't supported on this system yet"))
+    }
+
+    @Test func claudeDesktopSwitchesByItselfWithoutTheApp() async throws {
+        try setUpClaude()
+        let desktop = FakeDesktop(quits: true)
+        let result = await run(["switch", "claude", "personal", "--json"], claudeDesktop: desktop)
+        #expect(result.code == 0)
+        #expect(try object(result.out)["state"] as? String == "switched")
+        #expect(ProfileManager(home: home).activeProfile() == "personal")
+        // Claude quit before the link moved, and started again after.
+        #expect(desktop.calls.withLock { $0 } == ["quit", "launch"])
+    }
+
+    @Test func claudeThatWontQuitIsLeftOnItsProfile() async throws {
+        try setUpClaude()
+        let desktop = FakeDesktop(quits: false)
+        let result = await run(["switch", "claude", "personal"], claudeDesktop: desktop)
+        #expect(result.code == 1)
+        #expect(result.err.contains("Claude did not quit"))
+        #expect(ProfileManager(home: home).activeProfile() == "work")
+        #expect(desktop.calls.withLock { $0 } == ["quit"])
+    }
+
+    @Test func setupMakesTheFirstProfileWhileClaudeIsClosed() async throws {
+        let desktop = FakeDesktop(quits: true)
+        let result = await run(["setup", "claude", "main", "--json"], claudeDesktop: desktop)
+        #expect(result.code == 0)
+        #expect(ProfileManager(home: home).profiles() == ["main"])
+        #expect(desktop.calls.withLock { $0 } == ["quit", "launch"])
+        // Once set up, it leaves Claude alone.
+        #expect(await run(["setup", "claude", "other"], claudeDesktop: desktop).code == 0)
+        #expect(desktop.calls.withLock { $0 }.count == 2)
+    }
+
+    @Test func newProfilesAndSavedCodexLogins() async throws {
+        try setUpClaude()
+        try setUpCodex()
+        #expect(await run(["new", "claude", "extra"]).code == 0)
+        #expect(ProfileManager(home: home).profiles().contains("extra"))
+        #expect(await run(["new", "claude-cli", "scripts"]).code == 0)
+        #expect(CLIProfileManager(home: home).profiles() == ["scripts"])
+
+        let switcher = AccountSwitcher(paths: paths, clients: NullCodexClients())
+        try switcher.writeLiveSnapshot(try Fixtures.snapshot(email: "new@example.com", accountID: "acc-new"))
+        let saved = await run(["save", "codex", "New one", "--json"])
+        #expect(saved.code == 0)
+        #expect(try object(saved.out)["name"] as? String == "New one")
+        #expect(try switcher.profiles().count == 3)
+
+        let shim = await run(["setup", "claude-cli", "--json"])
+        #expect(shim.code == 0)
+        #expect(CLIProfileManager(home: home).isSetUp)
+        #expect(await run(["new", "codex", "x"]).code == 2)
+    }
+
+    @Test func codexSwitchesByItselfWithoutTheApp() async throws {
+        try setUpCodex()
+        let result = await run(["switch", "codex", "team@example.com"])
+        #expect(result.code == 0)
+        #expect(result.out.contains("Restart the ChatGPT or Codex app"))
+        let live = try AccountSwitcher(paths: paths, clients: NullCodexClients()).liveState()
+        #expect(live.file?.identity?.email == "team@example.com")
     }
 
     @Test func appURLKeepsTheNameInOnePathComponent() throws {
@@ -401,5 +465,22 @@ enum Fixtures {
             ],
         ]
         return try AuthSnapshot(data: try JSONSerialization.data(withJSONObject: root))
+    }
+}
+
+/// Stands in for quitting and starting Claude Desktop.
+final class FakeDesktop: DesktopAppControl {
+    let quits: Bool
+    let calls = LockedValue<[String]>([])
+
+    init(quits: Bool) { self.quits = quits }
+
+    func quit() async throws -> Bool {
+        calls.withLock { $0.append("quit") }
+        return quits
+    }
+
+    func launch() throws {
+        calls.withLock { $0.append("launch") }
     }
 }

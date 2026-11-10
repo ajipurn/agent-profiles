@@ -2,17 +2,21 @@ import Foundation
 import CodexProfilesCore
 
 /// `agent-profiles`: the app's state, and its switches, from a terminal
-/// (Raycast, Alfred, tmux, Claude Code's status line). Reading comes straight
-/// from the files the app keeps. Switching is handed to the app through its
-/// URL scheme, so Claude or ChatGPT quits and relaunches exactly as it does
-/// from the menu; the command waits until the switch shows on disk.
+/// (Raycast, Alfred, tmux, Claude Code's status line), and the engine of the
+/// Windows tray. Reading comes straight from the files the app keeps. On macOS
+/// switching is handed to the app through its URL scheme, so Claude or ChatGPT
+/// quits and relaunches exactly as it does from the menu; the command waits
+/// until the switch shows on disk. Elsewhere the command switches by itself.
 public enum CLI {
     /// Everything the commands reach outside themselves, so tests can stand in.
     public struct Context: Sendable {
         public var home: URL
         public var codexPaths: CodexPaths
-        /// Hands a switch to the app; nil where there is no app yet (Windows, Linux).
+        /// Hands a switch to the app; nil where there is no Mac app (Windows, Linux).
         public var openInApp: (@Sendable (URL) throws -> Void)?
+        /// Quits and restarts Claude Desktop when the command switches it by
+        /// itself (no Mac app); nil where that isn't supported.
+        public var claudeDesktop: (any DesktopAppControl)?
         public var fetchCodexUsage: @Sendable (AuthSnapshot) async throws -> UsageFetchResult
         public var output: @Sendable (String) -> Void
         public var errorOutput: @Sendable (String) -> Void
@@ -52,7 +56,7 @@ public enum CLI {
             #else
             let openInApp: (@Sendable (URL) throws -> Void)? = nil
             #endif
-            return Context(
+            var context = Context(
                 home: FileManager.default.homeDirectoryForCurrentUser,
                 codexPaths: .default(),
                 openInApp: openInApp,
@@ -60,6 +64,10 @@ public enum CLI {
                 output: { print($0) },
                 errorOutput: { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             )
+            #if os(Windows)
+            context.claudeDesktop = WindowsClaudeDesktop()
+            #endif
+            return context
         }
     }
 
@@ -111,6 +119,11 @@ public enum CLI {
             case ("usage", 1...2):
                 try await commands.usage(try words.dropFirst().first.map(provider), allCodex: allCodex, record: record)
             case ("providers", _): try await commands.providers(Array(words.dropFirst()))
+            case ("setup", 2...3): try await commands.setup(try provider(words[1]), name: words.dropFirst(2).first)
+            case ("new", 3): try commands.newProfile(try provider(words[1]), name: words[2])
+            case ("save", 3): try commands.save(try provider(words[1]), name: words[2])
+            case ("setup", _), ("new", _), ("save", _):
+                throw CLIError.usage("\(words[0]) takes a provider and a name, e.g. \(words[0]) claude work")
             case ("cost", 1): await commands.cost()
             case ("history", 1...2): try await commands.history(try words.dropFirst().first.map(provider), days: days ?? 7)
             case ("switch", 3): try await commands.switchTo(try provider(words[1]), name: words[2], wait: wait)
@@ -170,8 +183,17 @@ public enum CLI {
                                 given, up to 30) and how often a limit filled up,
                                 from the readings the app keeps while it runs
       switch claude|claude-cli|codex <name>
-                                switch through the Agent Profiles app and wait until
-                                it is done (--no-wait returns right away)
+                                switch and wait until it is done; on macOS through
+                                the Agent Profiles app (--no-wait returns right away),
+                                on Windows by itself, closing and reopening Claude
+
+      setup claude <name>       the Claude Desktop login in use becomes profile <name>
+                                (Windows; on macOS the app sets profiles up)
+      setup claude-cli          install the claude shim that picks the Claude Code
+                                profile, and say how to put it on PATH
+      new claude|claude-cli <name>
+                                an empty profile that logs in on first use
+      save codex <name>         keep the Codex login in use as a saved account
 
       --json                    machine-readable output; a failure is {"error": "…"}
     """

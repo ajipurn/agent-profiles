@@ -23,6 +23,21 @@ final class CLIProfileManagerTests {
         #expect(cli.activeProfile() == nil)
     }
 
+    @Test func windowsShimIsABatchFileThatSkipsItself() throws {
+        try cli.installWindowsShim()
+        let data = try Data(contentsOf: cli.windowsShim)
+        let text = String(decoding: data, as: UTF8.self)
+        // cmd wants CRLF line ends.
+        #expect(text.contains("\r\n") && !text.replacingOccurrences(of: "\r\n", with: "").contains("\n"))
+        #expect(text.hasPrefix("@echo off"))
+        #expect(text.contains(#"set /p ACTIVE=<"%SHIM_DIR%..\active""#))
+        #expect(text.contains(#"if /i not "%%~dpC"=="%SHIM_DIR%""#))
+        // A set CLAUDE_CONFIG_DIR wins, and `!` in arguments survives.
+        #expect(text.contains("if defined CLAUDE_CONFIG_DIR goto run"))
+        #expect(text.contains("DisableDelayedExpansion") && !text.contains("!ERRORLEVEL!"))
+        #expect(fm.fileExists(atPath: cli.profilesDir.path))
+    }
+
     @Test func testInstallShimIsIdempotentAndExecutable() throws {
         try cli.installShim()
         try cli.installShim()

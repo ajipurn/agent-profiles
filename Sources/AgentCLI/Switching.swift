@@ -5,7 +5,7 @@ import CodexProfilesCore
 extension Commands {
     /// Checks the name here, so a typo fails fast with the choices, then hands
     /// the switch to the app and waits until it shows on disk. Where there is
-    /// no app, only the Claude Code profile can switch: that is one file.
+    /// no Mac app (Windows), the command switches by itself, as the app would.
     func switchTo(_ provider: Provider, name: String, wait: Bool) async throws {
         let target: (urlName: String, shown: String, isDone: () -> Bool)
         switch provider {
@@ -15,6 +15,12 @@ extension Commands {
                 throw unknown(name, provider, choices: manager.ordered(manager.profiles()))
             }
             target = (name, name, { manager.activeProfile() == name })
+            if context.openInApp == nil, !target.isDone() {
+                guard let desktop = context.claudeDesktop else {
+                    throw CLIError.failed("switching \(provider.title) isn't supported on this system yet")
+                }
+                return try await switchClaudeDesktop(to: name, quitting: desktop)
+            }
 
         case .claudeCLI:
             let manager = claudeCode
@@ -42,6 +48,12 @@ extension Commands {
                 throw CLIError.failed("several Codex accounts are called “\(name)”; use the email instead")
             }
             target = (name, profile.displayName, { (try? switcher.liveState())?.matchingProfileID == profile.id })
+            if context.openInApp == nil, !target.isDone() {
+                // The codex CLI reads the login at every start; an open app keeps the old one.
+                try await switcher.switchTo(profile.id)
+                return report(provider, profile.displayName, state: "switched",
+                              "Codex switched to \(profile.displayName). Restart the ChatGPT or Codex app to use it there.")
+            }
         }
 
         if target.isDone() {
@@ -63,6 +75,30 @@ extension Commands {
         }
         report(provider, target.shown, state: "switched", "\(provider.title) switched to \(target.shown)."
                + (provider == .claudeCLI ? " Applies to claude commands started from now on." : ""))
+    }
+
+    /// What the Mac app does for a Desktop switch: Claude quits, the profile
+    /// link moves, shared history is relinked (only safe while Claude is
+    /// down), and Claude starts again.
+    func switchClaudeDesktop(to name: String, quitting desktop: any DesktopAppControl) async throws {
+        let manager = claude
+        let previous = manager.activeProfile()
+        guard try await desktop.quit() else {
+            throw CLIError.failed("Claude did not quit, so it stays on \(previous ?? "its profile")")
+        }
+        do {
+            try manager.switchTo(name: name)
+        } catch {
+            try? desktop.launch()
+            throw CLIError.failed("Claude Desktop could not switch to \(name): \(error.localizedDescription)")
+        }
+        var note = ""
+        if manager.sharedHistoryEnabled {
+            do { try manager.enableSharedHistory(promoteActive: true) }
+            catch { note = " Shared history could not be relinked: \(error.localizedDescription)" }
+        }
+        try desktop.launch()
+        report(.claude, name, state: "switched", "Claude Desktop switched to \(name)." + note)
     }
 
     /// The URL the app's scripting hook takes: agentprofiles://<provider>/<name>.
