@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.7
+
+- Antigravity accounts now switch like Codex's. Add Account in the Antigravity tab saves the account signed in now and opens Antigravity signed out, so you can sign in with another Google account; it is saved as soon as you're in. Cancel Sign-in puts the previous account back.
+- The Antigravity tab lists your other Antigravity accounts with their 5-hour and weekly limits. Clicking one quits Antigravity, switches its sign-in and opens it again; `agy` switches too.
+- Settings → More Providers lists the saved Antigravity accounts to switch or forget, and `agentprofiles://antigravity/<email>` switches from scripts.
+- Saved Antigravity sign-ins stay in your login Keychain, like Antigravity's own.
+
 ## 1.4.6
 
 - Antigravity's card now matches Antigravity's own Usage view: its limits are grouped as Gemini Models, Claude and GPT models and Gemini 4 Argon, weekly before 5-hour. While Antigravity is open, the numbers come from the app itself, the only source of the Gemini 4 Argon allowance.
