@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.8
+
+- Fixed Add Account for Antigravity waiting forever after you signed in: right after a sign-in, Antigravity doesn't record which Google account it is, so the new account was never saved. Agent Profiles now asks Google which account it is, once.
+
 ## 1.4.7
 
 - Antigravity accounts now switch like Codex's. Add Account in the Antigravity tab saves the account signed in now and opens Antigravity signed out, so you can sign in with another Google account; it is saved as soon as you're in. Cancel Sign-in puts the previous account back.
