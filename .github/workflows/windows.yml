@@ -47,7 +47,33 @@ jobs:
           # the folder on PATH that holds swiftCore.dll.
           $runtime = Split-Path (Get-Command swiftCore.dll -ErrorAction Stop).Source
           Get-ChildItem $runtime -Filter *.dll | Copy-Item -Destination out/app/
+          # The Swift runtime is built with MSVC and needs the VC++ runtime
+          # (vcruntime140.dll, …), which a fresh Windows or Windows Server lacks.
+          # Microsoft allows shipping it next to the app, from Visual Studio's redist folder.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'the VC++ redistributable folder was not found' }
+          Copy-Item "$($crt.FullName)\*.dll" out/app/ -Force
           Copy-Item LICENSE, THIRD_PARTY_NOTICES.md, windows/README.md out/app/
+
+          # Every DLL the engine and the Swift runtime load must be in the folder
+          # or be part of Windows. The runner has the VC++ runtime installed, so
+          # running the engine alone would not catch a missing one.
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $bundled = @(Get-ChildItem out/app -File | ForEach-Object { $_.Name.ToLowerInvariant() })
+          $native = @('agent-profiles.exe') + @(Get-ChildItem out/app -Filter *.dll | Where-Object { $_.Name -match '^(swift|Foundation|_Foundation|dispatch|BlocksRuntime)' } | ForEach-Object Name)
+          $missing = @()
+          foreach ($file in $native) {
+            $imports = & $dumpbin.FullName /nologo /dependents "out/app/$file" | Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim().ToLowerInvariant() }
+            foreach ($dll in $imports) {
+              if ($bundled -contains $dll) { continue }
+              $redist = $dll -match '^(vcruntime|msvcp|concrt|vccorlib)'
+              $windows = $dll -like 'api-ms-win-*' -or $dll -like 'ext-ms-*' -or (Test-Path "$env:SystemRoot\System32\$dll")
+              if ($redist -or -not $windows) { $missing += "$file needs $dll" }
+            }
+          }
+          if ($missing) { throw ("missing from the package:`n" + ($missing | Sort-Object -Unique | Out-String)) }
+
           # The packaged engine must run from its own folder, without the toolchain.
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           & out/app/agent-profiles.exe providers --json | Out-Null

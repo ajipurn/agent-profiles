@@ -27,8 +27,10 @@ dotnet publish windows\AgentProfiles.Windows -c Release -r win-x64 --self-contai
 copy .build\release\agent-profiles.exe out\app\
 ```
 
-Copy the Swift runtime DLLs next to `agent-profiles.exe` as well; the CI
-workflow shows how. `AGENT_PROFILES_ENGINE` points the tray at another
+Copy the Swift runtime DLLs and the VC++ runtime DLLs (from Visual Studio's
+`VC\Redist\MSVC\…\x64\Microsoft.VC*.CRT`) next to `agent-profiles.exe` as well;
+the CI workflow shows how. The zip carries both, so it runs on a fresh Windows
+or Windows Server (Desktop Experience) with nothing else installed. `AGENT_PROFILES_ENGINE` points the tray at another
 `agent-profiles.exe` while developing.
 
 On macOS and Linux, `dotnet build windows/AgentProfiles.Windows` compiles the
