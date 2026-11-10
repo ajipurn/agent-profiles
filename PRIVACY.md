@@ -21,12 +21,12 @@ The two providers work differently, and so does what the app touches for each.
 
 ## More providers
 
-Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off until turned on in Settings → More Providers. A provider that is on reads the sign-in its own app or CLI keeps on this Mac and sends that token only to its own service, to ask for usage. It never writes to those files or databases: a token refreshed for a request stays in memory. Nothing is read from the Keychain or browser cookies.
+Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off until turned on in Settings → More Providers. A provider that is on reads the sign-in its own app or CLI keeps on this Mac and sends that token only to its own service, to ask for usage. It never writes to those files or databases: a token refreshed for a request stays in memory. Nothing is read from browser cookies, and nothing from the Keychain except the one Antigravity item below, read through macOS's own `security` tool, which that item already trusts (no prompt).
 
 | Provider | Reads | Sends it to |
 | --- | --- | --- |
 | Gemini | `~/.gemini/oauth_creds.json` (Gemini CLI's Google sign-in), and the OAuth client in the installed Gemini CLI to renew it | `cloudcode-pa.googleapis.com`, `oauth2.googleapis.com` |
-| Antigravity | `~/.gemini/antigravity-cli/antigravity-oauth-token` (the `agy` CLI's file token store), and the OAuth client in the installed `agy` or Antigravity app to renew it | `cloudcode-pa.googleapis.com`, `oauth2.googleapis.com`, `www.googleapis.com` |
+| Antigravity | The Keychain item `gemini` / `antigravity` (the sign-in the Antigravity app and `agy` share on macOS), or `~/.gemini/antigravity-cli/antigravity-oauth-token` (the `agy` CLI's file token store), and the OAuth client in the installed `agy` or Antigravity app to renew it | `cloudcode-pa.googleapis.com`, `oauth2.googleapis.com`, `www.googleapis.com` |
 | Cursor | `cursorAuth/accessToken` in Cursor's `state.vscdb` (opened read-only), or `~/.config/cursor/auth.json` from `cursor-agent login` | `cursor.com` |
 | GitHub Copilot | `~/.config/github-copilot/apps.json` / `hosts.json` (JetBrains, Vim/Neovim, Xcode plugins) or `~/.copilot/config.json` when the Copilot CLI stores its token in plain text | `api.github.com` (or your GitHub Enterprise host) |
 | OpenCode | `OPENCODE_API_KEY`, or the `credential` table in OpenCode's `opencode.db` (read-only), or its older `auth.json` | `opencode.ai` |

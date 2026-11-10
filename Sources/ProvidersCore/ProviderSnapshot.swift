@@ -125,7 +125,8 @@ public protocol UsageProvider: Sendable {
     /// Statuspage base URL (".../api/v2/status.json" is appended), if any.
     var statusPageURL: URL? { get }
 
-    /// True when a local sign-in exists. Touches only the file system.
+    /// True when a local sign-in exists. Touches only the file system (and,
+    /// for Antigravity, a Keychain item's attributes, which never prompts).
     func isSignedIn(in environment: ProviderEnvironment) -> Bool
     func fetch(in environment: ProviderEnvironment) async throws -> ProviderSnapshot
 }
