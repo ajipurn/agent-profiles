@@ -2,6 +2,7 @@ import Foundation
 import ClaudeProfilesCore
 import CodexProfilesCore
 import UsageCostCore
+import UsageHistoryCore
 
 struct Commands {
     let context: CLI.Context
@@ -94,18 +95,25 @@ struct Commands {
 
     // MARK: - usage
 
-    func usage(_ only: Provider?) async throws {
+    /// `allCodex` also fetches every saved Codex account, as the menu does.
+    /// `record` appends the readings to the usage history the app keeps, for
+    /// a host that has no Mac app recording them (the Windows tray).
+    func usage(_ only: Provider?, allCodex: Bool = false, record: Bool = false) async throws {
         guard only != .claudeCLI else {
             throw CLIError.usage("Claude Code shares its account's usage with Claude Desktop; use usage claude")
         }
         let now = Date()
         var objects: [String: Any] = [:]
         var sections: [String] = []
+        var samples: [UsageSample] = []
         if only != .codex {
-            let reports = claude.ordered(claude.profiles()).map { name in
-                (name, claude.usage(profile: name).map { ClaudeUsageReport($0, now: now) })
+            let active = claude.activeProfile()
+            let usages = claude.ordered(claude.profiles()).map { ($0, claude.usage(profile: $0)) }
+            samples += usages.compactMap { name, usage in usage.map { UsageSample.claude(name, $0) } }
+            let reports = usages.map { name, usage in (name, usage.map { ClaudeUsageReport($0, now: now) }) }
+            objects[Provider.claude.jsonKey] = reports.map {
+                ["name": $0.0, "active": $0.0 == active, "usage": orNull($0.1?.json)] as [String: Any]
             }
-            objects[Provider.claude.jsonKey] = reports.map { ["name": $0.0, "usage": orNull($0.1?.json)] as [String: Any] }
             let width = reports.map { $0.0.count }.max() ?? 0
             let lines = reports.map { name, usage in
                 name.padding(toLength: width + 2, withPad: " ", startingAt: 0) + (usage?.text(now: now) ?? "no usage seen yet")
@@ -113,12 +121,64 @@ struct Commands {
             sections.append(section(only == nil ? Provider.claude.title : nil, lines))
         }
         if only != .claude {
-            let report = try await codexUsage()
-            objects[Provider.codex.jsonKey] = report.json
-            sections.append(section(only == nil ? Provider.codex.title : nil, [report.text(now: now)]))
+            var activeID: UUID?
+            var lines: [String] = []
+            do {
+                let report = try await codexUsage()
+                activeID = report.account.flatMap { UUID(uuidString: $0.id) }
+                if let activeID { samples.append(.codex(activeID, report.usage)) }
+                objects[Provider.codex.jsonKey] = report.json
+                lines.append(report.text(now: now))
+            } catch CLIError.failed(let message) where only == nil || allCodex {
+                // One provider failing leaves the other's numbers standing.
+                objects[Provider.codex.jsonKey] = ["error": message]
+                lines.append(message)
+            }
+            if allCodex {
+                let saved = await savedCodexUsage(except: activeID)
+                samples += saved.compactMap { entry in entry.usage.map { .codex(entry.profile.id, $0) } }
+                objects["codexAccounts"] = saved.map(\.json)
+                lines += saved.map { $0.text(now: now) }
+            }
+            sections.append(section(only == nil ? Provider.codex.title : nil, lines))
         }
-        if json { return emit(only.map { objects[$0.jsonKey]! } ?? objects) }
+        if record, !samples.isEmpty {
+            await UsageHistory(home: context.home).record(samples)
+        }
+        if json {
+            guard let only else { return emit(objects) }
+            // One provider is just its value, except Codex with its saved accounts.
+            if only == .codex, allCodex { return emit(objects) }
+            return emit(objects[only.jsonKey]!)
+        }
         context.output(sections.joined(separator: "\n"))
+    }
+
+    /// Saved Codex accounts other than the active one, fetched one after
+    /// another; a refreshed token is saved back unless the account changed meanwhile.
+    func savedCodexUsage(except activeID: UUID?) async -> [SavedCodexUsage] {
+        let switcher = codex
+        var results: [SavedCodexUsage] = []
+        for profile in (try? codexProfiles()) ?? [] where profile.id != activeID {
+            var entry = SavedCodexUsage(profile: profile)
+            do {
+                let snapshot = try switcher.store.loadSnapshot(profile.id)
+                guard snapshot.isChatGPTSession else {
+                    entry.error = "Signed in with an API key, which has no usage limits to show"
+                    results.append(entry)
+                    continue
+                }
+                let result = try await context.fetchCodexUsage(snapshot)
+                if let updated = result.updatedSnapshot {
+                    _ = try switcher.applyUsageRefresh(updated, replacing: snapshot, profileID: profile.id)
+                }
+                entry.usage = result.usage
+            } catch {
+                entry.error = "Usage could not be loaded: \(error.localizedDescription)"
+            }
+            results.append(entry)
+        }
+        return results
     }
 
     /// Fetched now, the way the app does it: a token refreshed on the way is

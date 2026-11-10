@@ -4,6 +4,7 @@ import Testing
 import ClaudeProfilesCore
 import CodexProfilesCore
 import PlatformSupport
+import ProvidersCore
 import UsageHistoryCore
 
 /// Every test gets its own home: Claude Desktop profiles "personal" and
@@ -131,6 +132,54 @@ final class AgentCLITests {
         let result = await run(["usage", "codex"])
         #expect(result.code == 1)
         #expect(result.err.contains("signed out"))
+    }
+
+    @Test func usageKeepsClaudeWhenCodexFails() async throws {
+        try setUpClaude()
+        let result = await run(["usage", "--json"])
+        #expect(result.code == 0)
+        let usage = try object(result.out)
+        let claude = try #require(usage["claude"] as? [[String: Any]])
+        #expect(claude.map { $0["name"] as? String } == ["personal", "work"])
+        #expect(claude.map { flag($0["active"]) } == [false, true])
+        #expect((usage["codex"] as? [String: Any])?["error"] as? String == "Codex is signed out")
+    }
+
+    @Test func allCodexFetchesSavedAccountsAndRecordsTheReadings() async throws {
+        try setUpCodex()
+        let result = await run(["usage", "codex", "--json", "--all-codex", "--record"], fetch: { snapshot in
+            let used: Double = snapshot.identity?.email == "team@example.com" ? 50 : 12
+            return UsageFetchResult(usage: CodexUsage(planType: "plus", primary: UsageWindow(usedPercent: used)),
+                                    updatedSnapshot: nil)
+        })
+        #expect(result.code == 0)
+        let usage = try object(result.out)
+        #expect(number(((usage["codex"] as? [String: Any])?["session"] as? [String: Any])?["usedPercent"]) == 12)
+        let saved = try #require(usage["codexAccounts"] as? [[String: Any]])
+        #expect(saved.map { ($0["account"] as? [String: Any])?["email"] as? String } == ["team@example.com"])
+        #expect(number((((saved.first?["usage"] as? [String: Any])?["session"]) as? [String: Any])?["usedPercent"]) == 50)
+        #expect(saved.first?["error"] is NSNull)
+        // Both accounts' readings went into the app's usage history.
+        let samples = await UsageHistory(home: home).samples(since: .distantPast)
+        #expect(samples.filter { $0.provider == .codex }.map(\.session).sorted { ($0 ?? 0) < ($1 ?? 0) } == [12, 50])
+    }
+
+    @Test func failuresAreJSONWhenAskedFor() async throws {
+        let result = await run(["usage", "claude-cli", "--json"])
+        #expect(result.code == 2)
+        #expect(try object(result.out)["error"] as? String
+            == "Claude Code shares its account's usage with Claude Desktop; use usage claude")
+        #expect(await run(["status", "--record"]).code == 2)
+    }
+
+    @Test func providersAreListedWithTheirSignInState() async throws {
+        let result = await run(["providers", "--json"])
+        #expect(result.code == 0)
+        let providers = try #require(try JSONSerialization.jsonObject(with: Data(result.out.utf8)) as? [[String: Any]])
+        #expect(providers.map { $0["id"] as? String } == ProviderRegistry.all.map(\.id))
+        // Gemini's sign-in is a file in this empty home: not there.
+        #expect(flag(providers.first { $0["id"] as? String == "gemini" }?["signedIn"]) == false)
+        #expect(await run(["providers", "usage", "nosuch"]).code == 2)
     }
 
     @Test func costWithoutLogsIsZero() async throws {

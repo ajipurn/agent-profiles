@@ -36,7 +36,7 @@ var targets: [Target] = [
     // a generated LiteLLM snapshot (scripts/update-pricing.py).
     .target(name: "UsageCostCore", dependencies: ["PlatformSupport"]),
     // Usage readings over the last month, for Settings → History.
-    .target(name: "UsageHistoryCore", dependencies: ["PlatformSupport"]),
+    .target(name: "UsageHistoryCore", dependencies: ["PlatformSupport", "ClaudeProfilesCore", "CodexProfilesCore"]),
     // Codex regression checks: a plain executable, so they run without XCTest.
     .executableTarget(
         name: "CodexProfilesCheck",
@@ -70,12 +70,14 @@ var targets: [Target] = [
     // tests drive it.
     .target(
         name: "AgentCLI",
-        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "UsageCostCore", "UsageHistoryCore"]
+        dependencies: ["ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport", "ProvidersCore", "UsageCostCore",
+                       "UsageHistoryCore"]
     ),
     .executableTarget(name: "AgentProfilesCLI", dependencies: ["AgentCLI"]),
     .testTarget(
         name: "AgentCLITests",
-        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport", "UsageHistoryCore"]
+        dependencies: ["AgentCLI", "ClaudeProfilesCore", "CodexProfilesCore", "PlatformSupport", "ProvidersCore",
+                       "UsageHistoryCore"]
     ),
 ]
 products += [

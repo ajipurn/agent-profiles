@@ -66,7 +66,7 @@ public enum CLI {
     /// 0 when done, 1 when it failed, 2 when the command line was wrong.
     public static func run(_ arguments: [String], context: Context) async -> Int32 {
         var words: [String] = []
-        var json = false, wait = true, help = false, positionalOnly = false
+        var json = false, wait = true, help = false, positionalOnly = false, allCodex = false, record = false
         var days: Int?
         var rest = arguments[...]
         while let argument = rest.popFirst() {
@@ -77,12 +77,14 @@ public enum CLI {
             switch argument {
             case "--json": json = true
             case "--no-wait": wait = false
+            case "--all-codex": allCodex = true
+            case "--record": record = true
             case "-h", "--help": help = true
             case "--": positionalOnly = true // names that start with a dash come after it
             // Anything but a number in range is caught below.
             case "--days": days = rest.popFirst().flatMap { Int($0) } ?? 0
             case _ where argument.hasPrefix("--days="): days = Int(argument.dropFirst("--days=".count)) ?? 0
-            default: return fail(.usage("unknown option \(argument)"), context)
+            default: return fail(.usage("unknown option \(argument)"), context, json: json)
             }
         }
         if help || words.first == "help" {
@@ -91,10 +93,14 @@ public enum CLI {
         }
         if words.isEmpty { words = ["status"] }
         if let days {
-            guard words[0] == "history" else { return fail(.usage("--days only goes with history"), context) }
+            guard words[0] == "history" else { return fail(.usage("--days only goes with history"), context, json: json) }
             guard Commands.historyDays.contains(days) else {
-                return fail(.usage("--days takes a number of days from 1 to \(Commands.historyDays.upperBound)"), context)
+                return fail(.usage("--days takes a number of days from 1 to \(Commands.historyDays.upperBound)"), context,
+                            json: json)
             }
+        }
+        if (allCodex || record), words[0] != "usage" {
+            return fail(.usage("--all-codex and --record only go with usage"), context, json: json)
         }
 
         let commands = Commands(context: context, json: json)
@@ -102,7 +108,9 @@ public enum CLI {
             switch (words[0], words.count) {
             case ("status", 1): try commands.status()
             case ("list", 1...2): try commands.list(try words.dropFirst().first.map(provider))
-            case ("usage", 1...2): try await commands.usage(try words.dropFirst().first.map(provider))
+            case ("usage", 1...2):
+                try await commands.usage(try words.dropFirst().first.map(provider), allCodex: allCodex, record: record)
+            case ("providers", _): try await commands.providers(Array(words.dropFirst()))
             case ("cost", 1): await commands.cost()
             case ("history", 1...2): try await commands.history(try words.dropFirst().first.map(provider), days: days ?? 7)
             case ("switch", 3): try await commands.switchTo(try provider(words[1]), name: words[2], wait: wait)
@@ -113,9 +121,9 @@ public enum CLI {
             }
             return 0
         } catch let error as CLIError {
-            return fail(error, context)
+            return fail(error, context, json: json)
         } catch {
-            return fail(.failed(error.localizedDescription), context)
+            return fail(.failed(error.localizedDescription), context, json: json)
         }
     }
 
@@ -126,15 +134,18 @@ public enum CLI {
         return provider
     }
 
-    static func fail(_ error: CLIError, _ context: Context) -> Int32 {
-        switch error {
-        case .usage(let message):
-            context.errorOutput("agent-profiles: \(message)\nRun agent-profiles help for the commands.")
-            return 2
-        case .failed(let message):
-            context.errorOutput("agent-profiles: \(message)")
-            return 1
+    /// With --json the error is also an object on stdout, `{"error": "…"}`,
+    /// so a program reading the output always gets JSON.
+    static func fail(_ error: CLIError, _ context: Context, json: Bool = false) -> Int32 {
+        let (message, code): (String, Int32) = switch error {
+        case .usage(let message): (message, 2)
+        case .failed(let message): (message, 1)
         }
+        if json, let data = try? JSONSerialization.data(withJSONObject: ["error": message], options: [.sortedKeys]) {
+            context.output(String(decoding: data, as: UTF8.self))
+        }
+        context.errorOutput("agent-profiles: \(message)" + (code == 2 ? "\nRun agent-profiles help for the commands." : ""))
+        return code
     }
 
     static let usage = """
@@ -144,8 +155,14 @@ public enum CLI {
                                 Claude Code profile and the Codex account (default)
       list [claude|claude-cli|codex]
                                 profiles and accounts; * marks the active ones
-      usage [claude|codex]      Claude Desktop usage as Claude last saw it, and the
-                                active Codex account's usage, fetched now
+      usage [claude|codex] [--all-codex] [--record]
+                                Claude Desktop usage as Claude last saw it, and the
+                                active Codex account's usage, fetched now;
+                                --all-codex also fetches every saved Codex account,
+                                --record adds the readings to the usage history
+      providers [usage [id …]]  the other providers (Gemini, Antigravity, Copilot, …)
+                                and whether they are signed in; with usage, their
+                                usage fetched now (every signed-in one unless named)
       cost                      estimated cost today, yesterday and over 30 days,
                                 from local Claude Code and Codex logs
       history [claude|codex] [--days N]
@@ -156,7 +173,7 @@ public enum CLI {
                                 switch through the Agent Profiles app and wait until
                                 it is done (--no-wait returns right away)
 
-      --json                    machine-readable output
+      --json                    machine-readable output; a failure is {"error": "…"}
     """
 }
 

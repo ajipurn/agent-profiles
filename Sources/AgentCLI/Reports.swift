@@ -39,18 +39,36 @@ struct WindowReport: Equatable {
 
 /// Usage of a Claude account as Claude Desktop last fetched it.
 struct ClaudeUsageReport: Equatable {
+    struct Scoped: Equatable {
+        var name: String
+        var window: WindowReport
+    }
+
     var session: WindowReport?
     var weekly: WindowReport?
+    /// Weekly windows that cover only some models ("Sonnet", "Opus").
+    var scoped: [Scoped]
+    var extraUsage: ProfileUsage.ExtraUsage?
     var asOf: Date
 
     init(_ usage: ProfileUsage, now: Date) {
         session = usage.fiveHour.map { WindowReport($0, now: now) }
         weekly = usage.sevenDay.map { WindowReport($0, now: now) }
+        scoped = usage.scoped.map { Scoped(name: $0.name, window: WindowReport($0.window, now: now)) }
+        extraUsage = usage.extraUsage
         asOf = usage.asOf
     }
 
     var json: [String: Any] {
-        ["session": orNull(session?.json), "weekly": orNull(weekly?.json), "asOf": isoDate(asOf)]
+        [
+            "session": orNull(session?.json),
+            "weekly": orNull(weekly?.json),
+            "scoped": scoped.map { $0.window.json.merging(["name": $0.name]) { _, name in name } },
+            "extraUsage": orNull(extraUsage.map {
+                ["used": $0.used, "limit": orNull($0.limit), "currency": $0.currency] as [String: Any]
+            }),
+            "asOf": isoDate(asOf),
+        ]
     }
 
     /// Notes how old the numbers are once Claude hasn't looked for an hour.
@@ -92,6 +110,8 @@ struct CodexUsageReport {
             "limitReached": orNull(usage.limitReached),
             "session": orNull(usage.primary.map { WindowReport($0).json }),
             "weekly": orNull(usage.secondary.map { WindowReport($0).json }),
+            // Model-specific windows, such as Codex Spark's.
+            "additional": usage.additional.map { WindowReport($0.window).json.merging(["name": $0.name]) { _, name in name } },
             "fetchedAt": isoDate(usage.fetchedAt),
         ]
     }
@@ -110,4 +130,28 @@ struct CodexUsageReport {
 
 func isoDate(_ date: Date) -> String {
     ISO8601DateFormatter().string(from: date)
+}
+
+/// A saved Codex account's usage, or why there is none.
+struct SavedCodexUsage {
+    var profile: Profile
+    var usage: CodexUsage?
+    var error: String?
+
+    var json: [String: Any] {
+        let report = usage.map { CodexUsageReport(account: nil, fallbackName: "", usage: $0).json }
+        return [
+            "account": CodexAccountReport(profile, active: false).json,
+            "usage": orNull(report?.filter { $0.key != "account" }),
+            "error": orNull(error),
+        ]
+    }
+
+    func text(now: Date) -> String {
+        if let usage {
+            return CodexUsageReport(account: CodexAccountReport(profile, active: false), fallbackName: "", usage: usage)
+                .text(now: now)
+        }
+        return profile.displayName + ": " + (error ?? "no usage")
+    }
 }

@@ -188,10 +188,13 @@ public struct CodexPaths: Equatable, Sendable {
         profileDirectory(id).appendingPathComponent("meta.json")
     }
 
-    public static func `default`(fileManager: FileManager = .default) -> CodexPaths {
+    /// Codex's own folder is `CODEX_HOME` when set, as for the codex CLI itself.
+    public static func `default`(fileManager: FileManager = .default,
+                                 environment: [String: String] = ProcessInfo.processInfo.environment) -> CodexPaths {
         let home = fileManager.homeDirectoryForCurrentUser
+        let codexHome = environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
         return CodexPaths(
-            codexHome: home.appendingPathComponent(".codex", isDirectory: true),
+            codexHome: codexHome ?? home.appendingPathComponent(".codex", isDirectory: true),
             storeRoot: PlatformPaths.appData(home: home).appendingPathComponent("CodexProfiles", isDirectory: true)
         )
     }
