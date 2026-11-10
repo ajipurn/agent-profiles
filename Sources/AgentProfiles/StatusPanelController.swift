@@ -22,6 +22,7 @@ final class StatusPanelController: NSObject {
     private let codex: AppModel
     private let cost: CostModel
     private let extras: ExtraProvidersModel
+    private let antigravity: AntigravityAccountsModel
     private let status: StatusModel
     private let defaultTab: () -> String
     private let pickTab: (MenuBarProvider) -> Void
@@ -36,7 +37,8 @@ final class StatusPanelController: NSObject {
     /// so SwiftUI would never report the real height (1.3.1–1.3.2).
     private static let minHeight: CGFloat = 200
 
-    init(claude: AppState, codex: AppModel, cost: CostModel, extras: ExtraProvidersModel, status: StatusModel,
+    init(claude: AppState, codex: AppModel, cost: CostModel, extras: ExtraProvidersModel,
+         antigravity: AntigravityAccountsModel, status: StatusModel,
          defaultTab: @escaping () -> String,
          pickTab: @escaping (MenuBarProvider) -> Void,
          openSettings: @escaping (SettingsPane) -> Void,
@@ -45,6 +47,7 @@ final class StatusPanelController: NSObject {
         self.codex = codex
         self.cost = cost
         self.extras = extras
+        self.antigravity = antigravity
         self.status = status
         self.defaultTab = defaultTab
         self.pickTab = pickTab
@@ -73,7 +76,8 @@ final class StatusPanelController: NSObject {
         }
         #endif
         let host = NSHostingController(rootView: StatusPanelView(
-            tab: tab, claude: claude, codex: codex, cost: cost, extras: extras, status: status, actions: actions,
+            tab: tab, claude: claude, codex: codex, cost: cost, extras: extras, antigravity: antigravity,
+            status: status, actions: actions,
             onHeightChange: { [weak self] height in self?.place(height: height) }))
         host.sizingOptions = [] // place(height:) owns the window size
         // Measured explicitly up front: fittingSize is 0 here, which left
@@ -93,6 +97,7 @@ final class StatusPanelController: NSObject {
         claude.refreshUsage()
         cost.refresh()
         extras.refresh()
+        antigravity.refresh()
         status.refresh()
         NSApp.activate(ignoringOtherApps: true) // so the panel takes keys (⌘R, ⌘,, ⌘Q)
         panel.makeKeyAndOrderFront(nil)
@@ -202,7 +207,11 @@ final class StatusPanelController: NSObject {
             openSettings(.codex)
         case .refreshExtra:
             extras.refresh(force: true)
+            antigravity.refresh(force: true)
             status.refresh(force: true)
+        case .switchAntigravity(let id): antigravity.switchTo(id)
+        case .addAntigravity: antigravity.add()
+        case .cancelAntigravitySignIn: antigravity.cancelAdd()
         case .open(let url): NSWorkspace.shared.open(url)
         case .copyImage(let image):
             NSPasteboard.general.clearContents()
@@ -217,12 +226,14 @@ enum PanelAction {
     case switchClaude(String), switchCodex(String), switchCLI(String?)
     case setUpClaude, newClaudeProfile, refreshClaude
     case refreshCodex, addCodex, cancelCodexLogin, saveCodex
+    case switchAntigravity(String), addAntigravity, cancelAntigravitySignIn
     case refreshExtra, open(URL), copyImage(NSImage)
     case settings(SettingsPane), quit
 
     var closesPanel: Bool {
         switch self {
-        case .refreshClaude, .refreshCodex, .refreshExtra, .switchCLI, .cancelCodexLogin, .copyImage: false
+        case .refreshClaude, .refreshCodex, .refreshExtra, .switchCLI, .cancelCodexLogin, .cancelAntigravitySignIn,
+             .copyImage: false
         default: true
         }
     }
@@ -245,6 +256,7 @@ struct StatusPanelView: View {
     let codex: AppModel // @Observable: reading it in `body` keeps it live
     @ObservedObject var cost: CostModel
     @ObservedObject var extras: ExtraProvidersModel
+    @ObservedObject var antigravity: AntigravityAccountsModel
     @ObservedObject var status: StatusModel
     @AppStorage(Preferences.showCostKey) private var showCost = true
     @AppStorage(UsageDisplay.sortByHeadroomKey) private var sortByHeadroom = true
@@ -342,6 +354,15 @@ struct StatusPanelView: View {
     private func extraCard(_ provider: any UsageProvider) -> UsageCardModel {
         var card = extras.cardModel(provider)
         card.incident = status.incident(for: provider.id)
+        if provider.id == AntigravityAccountsModel.providerID {
+            if antigravity.awaitingSignIn {
+                card.notice = "Sign in to Antigravity with the Google account to add. It is saved as soon as you are signed in."
+                card.noticeTone = .info
+            } else if antigravity.isBusy {
+                card.notice = "Switching Antigravity's account…"
+                card.noticeTone = .info
+            }
+        }
         return card
     }
 
@@ -360,9 +381,24 @@ struct StatusPanelView: View {
 
     private func extraBody(_ provider: any UsageProvider) -> some View {
         let card = extraCard(provider)
+        let isAntigravity = provider.id == AntigravityAccountsModel.providerID
         return VStack(alignment: .leading, spacing: 14) {
             UsageCardView(model: card)
+            if isAntigravity, !antigravity.menuAccounts.isEmpty {
+                AccountListView(accounts: sorted(antigravity.menuAccounts), tint: ExtraProvidersModel.style(provider).accent,
+                                isEnabled: antigravity.canSwitch) { account in
+                    actions.run(.switchAntigravity(account.id))
+                }
+            }
             HStack(spacing: 8) {
+                if isAntigravity {
+                    if antigravity.awaitingSignIn {
+                        PanelActionButton("Cancel Sign-in", symbol: "xmark.circle") { actions.run(.cancelAntigravitySignIn) }
+                    } else {
+                        PanelActionButton("Add Account", symbol: "person.badge.plus") { actions.run(.addAntigravity) }
+                            .disabled(!antigravity.canSwitch)
+                    }
+                }
                 PanelActionButton("Refresh", symbol: "arrow.clockwise") { actions.run(.refreshExtra) }
                     .keyboardShortcut("r")
                 if let url = provider.dashboardURL {

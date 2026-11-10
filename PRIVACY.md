@@ -21,7 +21,8 @@ The two providers work differently, and so does what the app touches for each.
 
 ## More providers
 
-Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off until turned on in Settings → More Providers. A provider that is on reads the sign-in its own app or CLI keeps on this Mac and sends that token only to its own service, to ask for usage. It never writes to those files or databases: a token refreshed for a request stays in memory. Nothing is read from browser cookies, and nothing from the Keychain except the one Antigravity item below, read through macOS's own `security` tool, which that item already trusts (no prompt).
+Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off until turned on in Settings → More Providers. A provider that is on reads the sign-in its own app or CLI keeps on this Mac and sends that token only to its own service, to ask for usage. It never writes to those files or databases: a token refreshed for a request stays in memory. The one exception is switching Antigravity accounts, below. Nothing is read from browser cookies, and nothing from the Keychain except Antigravity's item below and this app's own copies of it, all through macOS's own `security` tool, which those items trust (no prompt).
+
 
 | Provider | Reads | Sends it to |
 | --- | --- | --- |
@@ -32,6 +33,15 @@ Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off unt
 | OpenCode | `OPENCODE_API_KEY`, or the `credential` table in OpenCode's `opencode.db` (read-only), or its older `auth.json` | `opencode.ai` |
 | Kiro | kiro-cli's `data.sqlite3` (read-only) | Amazon's CodeWhisperer / Q endpoint for your region |
 | Grok | `~/.grok/auth.json` (Grok CLI) | `cli-chat-proxy.grok.com` |
+
+### Antigravity accounts
+
+- Nothing is saved until you choose Add Account. It saves the account signed in to Antigravity, quits Antigravity, removes its sign-in (the Keychain item `gemini` / `antigravity`) and opens it on its sign-in screen. Antigravity's own Sign Out is never used, so no saved sign-in is revoked. Cancelling puts the previous sign-in back.
+- Each saved account is a copy of that sign-in in a login Keychain item of this app's (service `Agent Profiles Antigravity`, one per account), written through `/usr/bin/security` like Antigravity's own. `~/Library/Application Support/AgentProfiles/Antigravity/accounts.json` lists the saved accounts' emails; it holds no tokens.
+- Once an account is saved, any other account that signs in to Antigravity is saved too.
+- Switching quits Antigravity, saves the sign-in it had, writes the chosen account's copy into Antigravity's Keychain item and opens Antigravity again if it was open. `agy` uses the same item, so it switches too.
+- The usage of saved accounts that aren't signed in comes from Cloud Code, with each account's own sign-in; its access token is renewed in memory only.
+- Forgetting an account in Settings → More Providers deletes its Keychain copy.
 
 ## Status pages
 

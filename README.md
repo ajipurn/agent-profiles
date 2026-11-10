@@ -59,6 +59,10 @@ affiliated with or endorsed by Anthropic, OpenAI or any other provider.
 - Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok, each
   turned on in Settings → More Providers. An Overview tab then lists every
   provider, closest to running out first.
+- Antigravity accounts switch like Codex's: *Add Account* opens Antigravity
+  signed out so you can sign in with another Google account, and the panel
+  lists the others with their usage. Switching quits Antigravity, swaps its
+  sign-in and opens it again; `agy` follows.
 
   <img src="docs/overview.png" width="300" alt="Overview tab: every provider with its two main limits, closest to running out first">
 

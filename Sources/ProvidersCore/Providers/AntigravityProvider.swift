@@ -20,7 +20,8 @@ import PlatformSupport
 ///
 /// An expired access token is renewed in memory with Antigravity's OAuth
 /// client (`ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET`, or read from the
-/// installed `agy` / Antigravity app); the stored sign-in is never written.
+/// installed `agy` / Antigravity app); reading usage never writes the stored
+/// sign-in. Only switching accounts does (`AntigravityAccounts`).
 public struct AntigravityProvider: UsageProvider {
     public let id = "antigravity"
     public let name = "Antigravity"
@@ -33,13 +34,23 @@ public struct AntigravityProvider: UsageProvider {
     var artifactSearchPaths: [URL]?
     /// The Keychain sign-in. Nil means the login Keychain; tests set it.
     var keychainSignIn: (@Sendable () -> String?)?
+    /// A saved account's sign-in (its stored JSON) to read in place of
+    /// Antigravity's own. Its numbers come from Cloud Code: the running
+    /// app's language server only knows the account signed in there.
+    var savedSignIn: String?
 
     static let keychainService = "gemini"
     static let keychainAccount = "antigravity"
 
     public init() {}
 
+    /// Reads a saved account's usage (see `AntigravityAccounts`).
+    public init(savedSignIn: String) {
+        self.savedSignIn = savedSignIn
+    }
+
     public func isSignedIn(in environment: ProviderEnvironment) -> Bool {
+        if savedSignIn != nil { return true }
         if FileManager.default.fileExists(atPath: Self.tokenURL(environment).path) { return true }
         if let keychainSignIn { return keychainSignIn() != nil }
         return GoKeyring.contains(service: Self.keychainService, account: Self.keychainAccount)
@@ -52,7 +63,7 @@ public struct AntigravityProvider: UsageProvider {
 
         let codeAssist = try await Self.loadCodeAssist(accessToken: token.accessToken, in: environment)
         let bodies: [Data]
-        if let local = await Self.localSummary(in: environment) {
+        if savedSignIn == nil, let local = await Self.localSummary(in: environment) {
             bodies = [local]
         } else {
             bodies = try await Self.quotaSummaries(
@@ -125,6 +136,12 @@ public struct AntigravityProvider: UsageProvider {
 
     /// The `agy` token file when there is one (it holds an ID token), else the Keychain item.
     func readCredentials(_ environment: ProviderEnvironment) throws -> Credentials {
+        if let savedSignIn {
+            guard let json = Self.object(Data(savedSignIn.utf8)) else {
+                throw ProviderFetchError.notSignedIn("This saved Antigravity sign-in couldn't be read. Add the account again.")
+            }
+            return Self.credentials(json)
+        }
         let url = Self.tokenURL(environment)
         if FileManager.default.fileExists(atPath: url.path) {
             guard let json = ProviderJSON.readObject(at: url) else {

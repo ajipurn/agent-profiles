@@ -321,6 +321,26 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
         #expect(local.request.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
+    @Test func aSavedAccountReadsCloudCodeNotTheRunningApp() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        // Antigravity is open (with its own sign-in in the token file); the
+        // saved account is another one, which its language server doesn't know.
+        try sandbox.writeToken("antigravity-oauth-token")
+        try sandbox.writeHub(port: 4244, pid: ProcessInfo.processInfo.processIdentifier)
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes(local: (200, "antigravity-local-summary")))
+        var provider = AntigravityProvider(savedSignIn: try keychainSignIn())
+        provider.artifactSearchPaths = []
+
+        #expect(provider.isSignedIn(in: sandbox.environment()))
+        let snapshot = try await provider.fetch(in: sandbox.environment())
+
+        #expect(snapshot.account == "keychain.user@example.com")
+        let requests = AntigravityStubURLProtocol.state.requests
+        #expect(!requests.contains { $0.request.url?.host == "127.0.0.1" })
+        #expect(requests.contains { $0.request.url?.path == "/v1internal:retrieveUserQuotaSummary" })
+    }
+
     @Test func aClosedAppsPortFileIsIgnored() async throws {
         let sandbox = try AntigravitySandbox()
         defer { sandbox.remove() }
