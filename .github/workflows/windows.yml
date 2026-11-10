@@ -1,0 +1,61 @@
+name: Windows app
+"on":
+  push:
+    branches: [main, 'feat/windows-**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    # The tray (C#) and the engine (the Swift CLI) in one folder, zipped for
+    # trying on a Windows PC. Not signed yet.
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: compnerd/gha-setup-swift@9ff1ee4c44888c5817fc14d1b257ac8cabb4935f # v0.5.1
+        with:
+          # swift.org names this release 6.4.0; the 6.4 paths 404.
+          swift-version: swift-6.4.0-release
+          swift-build: 6.4.0-RELEASE
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build the engine
+        run: swift build -c release --product agent-profiles
+      - name: Check the engine runs
+        shell: pwsh
+        run: |
+          $engine = Join-Path (swift build -c release --show-bin-path) 'agent-profiles.exe'
+          & $engine help
+          & $engine providers --json
+          if ($LASTEXITCODE -ne 0) { throw "agent-profiles providers failed ($LASTEXITCODE)" }
+      - name: Build the tray
+        run: dotnet publish windows/AgentProfiles.Windows -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o out/app
+      - name: Put the engine and its Swift runtime next to the tray
+        shell: pwsh
+        run: |
+          $bin = swift build -c release --show-bin-path
+          Copy-Item (Join-Path $bin 'agent-profiles.exe') out/app/
+          # The Swift runtime DLLs (swiftCore, Foundation, ICU data, …) come from
+          # the folder on PATH that holds swiftCore.dll.
+          $runtime = Split-Path (Get-Command swiftCore.dll -ErrorAction Stop).Source
+          Get-ChildItem $runtime -Filter *.dll | Copy-Item -Destination out/app/
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md, windows/README.md out/app/
+          # The packaged engine must run from its own folder, without the toolchain.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          & out/app/agent-profiles.exe providers --json | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "the packaged agent-profiles.exe did not run ($LASTEXITCODE)" }
+          Get-ChildItem out/app | Format-Table Name, Length
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AgentProfiles-Windows-x64
+          path: out/app/
+          if-no-files-found: error
+          retention-days: 14

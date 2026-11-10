@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Windows tray app. It draws what agent-profiles.exe (the Swift
+       engine, shipped in the same folder) reports, and asks it to switch.
+       Builds on macOS and Linux too (EnableWindowsTargeting); it only runs on Windows. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- WPF and Windows Forms share type names; every file says what it uses. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>AgentProfiles</AssemblyName>
+    <RootNamespace>AgentProfiles.Windows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>AppIcon.ico</ApplicationIcon>
+    <Version>1.4.6</Version>
+    <Product>Agent Profiles</Product>
+    <Company>Aji Purnomo</Company>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- WPF takes per-monitor DPI from app.manifest; this check is for Windows Forms apps. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="AppIcon.ico" />
+  </ItemGroup>
+
+</Project>

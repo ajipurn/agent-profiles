@@ -25,3 +25,7 @@ __pycache__/
 
 # Report from scripts/windows-research.ps1 (machine details)
 scripts/windows-research.txt
+
+# .NET build output of the Windows tray (windows/)
+windows/**/bin/
+windows/**/obj/
