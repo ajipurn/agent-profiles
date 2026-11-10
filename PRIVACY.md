@@ -39,6 +39,7 @@ Gemini, Antigravity, Cursor, GitHub Copilot, OpenCode, Kiro and Grok are off unt
 - Nothing is saved until you choose Add Account. It saves the account signed in to Antigravity, quits Antigravity, removes its sign-in (the Keychain item `gemini` / `antigravity`) and opens it on its sign-in screen. Antigravity's own Sign Out is never used, so no saved sign-in is revoked. Cancelling puts the previous sign-in back.
 - Each saved account is a copy of that sign-in in a login Keychain item of this app's (service `Agent Profiles Antigravity`, one per account), written through `/usr/bin/security` like Antigravity's own. `~/Library/Application Support/AgentProfiles/Antigravity/accounts.json` lists the saved accounts' emails; it holds no tokens.
 - Once an account is saved, any other account that signs in to Antigravity is saved too.
+- A sign-in Antigravity has just made doesn't name its Google account. It is matched to a saved account by its refresh token, or else its account is asked of Google (`www.googleapis.com/oauth2/v2/userinfo`) with that sign-in, once.
 - Switching quits Antigravity, saves the sign-in it had, writes the chosen account's copy into Antigravity's Keychain item and opens Antigravity again if it was open. `agy` uses the same item, so it switches too.
 - The usage of saved accounts that aren't signed in comes from Cloud Code, with each account's own sign-in; its access token is renewed in memory only.
 - Forgetting an account in Settings → More Providers deletes its Keychain copy.

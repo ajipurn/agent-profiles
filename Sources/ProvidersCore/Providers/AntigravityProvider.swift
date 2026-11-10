@@ -663,6 +663,17 @@ public struct AntigravityProvider: UsageProvider {
 
     // MARK: - Helpers
 
+    /// Which Google account a sign-in (its stored JSON) belongs to: its ID
+    /// token's claim, else Google's userinfo, renewing the access token in
+    /// memory first when it has expired.
+    static func lookUpEmail(signIn: String, in environment: ProviderEnvironment) async -> String? {
+        let provider = AntigravityProvider(savedSignIn: signIn)
+        guard let credentials = try? provider.readCredentials(environment),
+              let token = try? await provider.accessToken(for: credentials, in: environment) else { return nil }
+        if let email = ProviderJSON.string(ProviderJSON.jwtClaims(token.idToken)?["email"]) { return email }
+        return await userInfoEmail(accessToken: token.accessToken, in: environment)
+    }
+
     static func userInfoEmail(accessToken: String, in environment: ProviderEnvironment) async -> String? {
         let request = ProviderHTTP.request(userInfoURL, headers: ["Authorization": "Bearer \(accessToken)"])
         guard let json = try? await ProviderHTTP.object(request, in: environment) else { return nil }

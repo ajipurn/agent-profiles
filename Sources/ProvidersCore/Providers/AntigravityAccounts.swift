@@ -91,10 +91,19 @@ public struct AntigravityAccounts: Sendable {
     /// Saving reads, then rewrites the list: one at a time, or two saves of
     /// a new account (the panel's poll and a refresh) would both add it.
     private static let listLock = LockedValue(())
+    /// Accounts found for sign-ins that don't name theirs, by refresh token.
+    private static let knownEmails = LockedValue<[String: String]>([:])
 
-    public init(folder: URL, vault: any SignInVault = LoginKeychain()) {
+    /// Asks Google which account a sign-in (its stored JSON) belongs to.
+    public typealias EmailLookup = @Sendable (String) async -> String?
+    let lookUpEmail: EmailLookup
+
+    public init(folder: URL, vault: any SignInVault = LoginKeychain(), lookUpEmail: EmailLookup? = nil) {
         self.folder = folder
         self.vault = vault
+        self.lookUpEmail = lookUpEmail ?? { signIn in
+            await AntigravityProvider.lookUpEmail(signIn: signIn, in: ProviderEnvironment())
+        }
     }
 
     public static func standard(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> AntigravityAccounts {
@@ -139,19 +148,43 @@ public struct AntigravityAccounts: Sendable {
     }
 
     /// The Google account Antigravity is signed in with.
-    public func liveEmail() -> String? {
-        liveStored().flatMap(Self.email(ofStored:))
+    public func liveEmail() async -> String? {
+        guard let stored = liveStored() else { return nil }
+        return await email(of: stored)
     }
 
-    /// The account a stored sign-in belongs to: `id_token_email`, which
-    /// Antigravity writes beside the token, else the ID token's claim.
+    /// The account a stored sign-in names: `id_token_email`, which
+    /// Antigravity adds beside the token at some point, else the ID token's
+    /// claim. A fresh sign-in has neither.
     public static func email(ofStored stored: String) -> String? {
         guard let json = GoKeyring.decode(stored).flatMap({ AntigravityProvider.object(Data($0.utf8)) }) else {
             return nil
         }
         let credentials = AntigravityProvider.credentials(json)
-        let email = credentials.email ?? ProviderJSON.string(ProviderJSON.jwtClaims(credentials.idToken)?["email"])
-        guard let email = email?.trimmingCharacters(in: .whitespaces),
+        return validEmail(credentials.email ?? ProviderJSON.string(ProviderJSON.jwtClaims(credentials.idToken)?["email"]))
+    }
+
+    /// The account a stored sign-in belongs to. When it doesn't say: the
+    /// saved account with the same refresh token, else Google, asked once
+    /// per refresh token.
+    func email(of stored: String) async -> String? {
+        if let email = Self.email(ofStored: stored) { return email }
+        guard let signIn = GoKeyring.decode(stored), let refreshToken = Self.refreshToken(signIn) else { return nil }
+        if let known = Self.knownEmails.withLock({ $0[refreshToken] }) { return known }
+        var email = Self.validEmail(list().first { Self.refreshToken(self.signIn($0.id)) == refreshToken }?.email)
+        if email == nil { email = Self.validEmail(await lookUpEmail(signIn)) }
+        guard let email else { return nil }
+        Self.knownEmails.withLock { $0[refreshToken] = email }
+        return email
+    }
+
+    static func refreshToken(_ signIn: String?) -> String? {
+        guard let signIn, let json = AntigravityProvider.object(Data(signIn.utf8)) else { return nil }
+        return AntigravityProvider.credentials(json).refreshToken
+    }
+
+    static func validEmail(_ value: String?) -> String? {
+        guard let email = value?.trimmingCharacters(in: .whitespaces),
               let at = email.firstIndex(of: "@"), at != email.startIndex,
               email[email.index(after: at)...].contains(".") else { return nil }
         return email
@@ -160,9 +193,9 @@ public struct AntigravityAccounts: Sendable {
     /// Saves Antigravity's sign-in: refreshes its account's copy, or adds
     /// the account. Nil when Antigravity is signed out.
     @discardableResult
-    public func saveLive() throws -> AntigravityAccount? {
+    public func saveLive() async throws -> AntigravityAccount? {
         guard let stored = liveStored() else { return nil }
-        guard let email = Self.email(ofStored: stored), let password = GoKeyring.decode(stored) else {
+        guard let email = await email(of: stored), let password = GoKeyring.decode(stored) else {
             throw AntigravityAccountError.unknownSignIn
         }
         return try Self.listLock.withLock { _ in
@@ -186,12 +219,12 @@ public struct AntigravityAccounts: Sendable {
               vault.stored(service: Self.savedService, account: id.uuidString) != nil else {
             throw AntigravityAccountError.unknownAccount
         }
-        if let live = liveEmail(), account.matches(live) { return }
+        if let live = await liveEmail(), account.matches(live) { return }
         let wasRunning = await app.isRunning()
         guard await app.quit() else { throw AntigravityAccountError.appStillRunning }
         do {
             let previous = liveStored()
-            _ = try saveLive()
+            _ = try await saveLive()
             guard let target = vault.stored(service: Self.savedService, account: id.uuidString) else {
                 throw AntigravityAccountError.unknownAccount
             }
@@ -216,7 +249,7 @@ public struct AntigravityAccounts: Sendable {
         guard await app.quit() else { throw AntigravityAccountError.appStillRunning }
         let previous: AntigravityAccount?
         do {
-            previous = try saveLive()
+            previous = try await saveLive()
             try vault.delete(service: Self.liveService, account: Self.liveAccount)
         } catch {
             await app.launch(activate: false)
@@ -228,15 +261,15 @@ public struct AntigravityAccounts: Sendable {
 
     /// The account signed in since `beginAdding`, now saved; nil while
     /// Antigravity is still signed out or has only part of its sign-in.
-    public func finishAdding() -> AntigravityAccount? {
-        try? saveLive()
+    public func finishAdding() async -> AntigravityAccount? {
+        try? await saveLive()
     }
 
     /// Gives up on adding an account: whatever signed in meanwhile is kept
     /// (and saved); otherwise `previous` is signed in again.
     public func cancelAdding(restoring previous: UUID?, app: any AntigravityAppControl) async throws {
         if liveStored() != nil {
-            _ = try? saveLive()
+            _ = try? await saveLive()
             return
         }
         guard let previous, let stored = vault.stored(service: Self.savedService, account: previous.uuidString) else {
@@ -248,7 +281,7 @@ public struct AntigravityAccounts: Sendable {
         if liveStored() == nil {
             try vault.set(stored, service: Self.liveService, account: Self.liveAccount)
         } else {
-            _ = try? saveLive()
+            _ = try? await saveLive()
         }
         if wasRunning { await app.launch(activate: false) }
     }
