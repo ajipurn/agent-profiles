@@ -65,7 +65,7 @@ affiliated with or endorsed by Anthropic, OpenAI or any other provider.
 **Menu bar**
 - A two-bar icon, the session window on top and the weekly one below, with the
   session, weekly or lower percentage next to it. It follows the frontmost
-  Claude or Codex app, or the provider picked in Settings.
+  Claude, Codex or Antigravity app, or the provider picked in Settings.
 - ⌘⌥0 opens the panel. *Copy Image* puts the current card on the clipboard
   with email addresses masked; the eye button masks them in the panel too.
 
@@ -76,7 +76,7 @@ affiliated with or endorsed by Anthropic, OpenAI or any other provider.
 | Claude | Session, weekly, per-model weekly, extra usage | Claude Desktop's own cached usage response, read from disk. No token is read and no request is made. |
 | Codex | Session, weekly, Spark, credits, credit limit, limit resets | ChatGPT's usage API, with each saved account's login. |
 | Gemini | Pro, Flash and Flash Lite quotas, plan | Gemini CLI's sign-in and Google's Code Assist quota API. Workspace and Code Assist Standard/Enterprise accounts; Google moved individual and AI Pro/Ultra accounts to Antigravity in June 2026. |
-| Antigravity | 5-hour and weekly model pools | The sign-in the Antigravity app and `agy` share (its Keychain item, read without a prompt, or `agy`'s file token store) and Google's Cloud Code API. |
+| Antigravity | Weekly and 5-hour limits per model group (Gemini, Claude and GPT, Gemini 4 Argon), as Antigravity's Usage view shows them | The running Antigravity app's own quota summary when it is open; otherwise Google's Cloud Code API, with the sign-in the Antigravity app and `agy` share (its Keychain item, read without a prompt, or `agy`'s file token store). |
 | Cursor | Plan usage, on-demand spend | The Cursor app's or `cursor-agent`'s sign-in and cursor.com's dashboard API. |
 | GitHub Copilot | Premium requests, chat, completions | The GitHub token the JetBrains/Vim/Xcode plugins or the Copilot CLI keep in plain text. VS Code keeps its sign-in in the Keychain, which isn't read. |
 | OpenCode | Go plan session, weekly and monthly | OpenCode's own sign-in or `OPENCODE_API_KEY`. |

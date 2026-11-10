@@ -4,9 +4,15 @@ import FoundationNetworking
 #endif
 import PlatformSupport
 
-/// Google Antigravity's model quota (Gemini and Claude/GPT pools, 5-hour and
-/// weekly), read from Cloud Code with the Google sign-in that the Antigravity
-/// app and the `agy` CLI share. On macOS they keep it in the login Keychain
+/// Google Antigravity's model quota, grouped and ordered as Antigravity's own
+/// Usage view shows it (Gemini models, Claude and GPT models, Gemini 4 Argon;
+/// weekly, then 5-hour). While the Antigravity app runs, the numbers come
+/// from its language server on localhost, the source of that view and the
+/// only one with model-specific allowances such as Argon. Otherwise they come
+/// from Cloud Code, the lower of its two hosts per pool.
+///
+/// Plan and account always come from Cloud Code, with the Google sign-in that
+/// the Antigravity app and the `agy` CLI share. On macOS they keep it in the login Keychain
 /// (go-keyring, service `gemini`, account `antigravity`), read through
 /// `/usr/bin/security`, which the item trusts, so there is no prompt.
 /// Elsewhere, and where no keyring is available, `agy` keeps it in
@@ -20,6 +26,7 @@ public struct AntigravityProvider: UsageProvider {
     public let name = "Antigravity"
     public let brandHex = "#60BA7E"
     public let symbol = "balloon"
+    public let appBundleIDs = ["com.google.antigravity"]
 
     /// Where installed artifacts are looked for (the `agy` binary and the
     /// Antigravity app bundles). Nil means the defaults; tests set it.
@@ -44,8 +51,13 @@ public struct AntigravityProvider: UsageProvider {
         let claims = ProviderJSON.jwtClaims(token.idToken)
 
         let codeAssist = try await Self.loadCodeAssist(accessToken: token.accessToken, in: environment)
-        let bodies = try await Self.quotaSummaries(
-            accessToken: token.accessToken, project: codeAssist.project, in: environment)
+        let bodies: [Data]
+        if let local = await Self.localSummary(in: environment) {
+            bodies = [local]
+        } else {
+            bodies = try await Self.quotaSummaries(
+                accessToken: token.accessToken, project: codeAssist.project, in: environment)
+        }
         let windows = Self.windows(fromSummaries: bodies)
         guard !windows.isEmpty else {
             throw ProviderFetchError.unsupported("Antigravity reported no quota limits for this account.")
@@ -58,7 +70,15 @@ public struct AntigravityProvider: UsageProvider {
         if account == nil {
             account = await Self.userInfoEmail(accessToken: token.accessToken, in: environment)
         }
-        return ProviderSnapshot(account: account, plan: plan, windows: windows, fetchedAt: environment.now())
+        return ProviderSnapshot(account: account, plan: plan, windows: windows,
+                                primaryWindows: Self.primaryWindows(windows), fetchedAt: environment.now())
+    }
+
+    /// The first group's 5-hour and weekly windows (Gemini models), for the
+    /// menu bar icon's top and bottom bars.
+    static func primaryWindows(_ windows: [ProviderWindow]) -> [ProviderWindow]? {
+        let primary = [fiveHours, week].compactMap { seconds in windows.first { $0.windowSeconds == seconds } }
+        return primary.isEmpty ? nil : primary
     }
 
     // MARK: - Endpoints
@@ -481,19 +501,50 @@ public struct AntigravityProvider: UsageProvider {
 
     // MARK: - Quota summary
 
-    /// `retrieveUserQuotaSummary` bodies: production first, the daily host too
-    /// when production leaves a shared pool out (it can omit Gemini quotas).
+    /// The running Antigravity app's own quota summary, the source of its
+    /// Usage view: its language server answers on localhost at the port, and
+    /// with the CSRF token, it records in `~/.gemini/antigravity/daemon/hub_<port>.json`.
+    /// Nil when the app isn't running or doesn't answer.
+    static func localSummary(in environment: ProviderEnvironment) async -> Data? {
+        let folder = environment.home.appendingPathComponent(".gemini/antigravity/daemon", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+        let hubs = files.filter { $0.lastPathComponent.hasPrefix("hub_") && $0.pathExtension == "json" }
+            .sorted { modified($0) > modified($1) }
+        for hub in hubs {
+            guard let json = ProviderJSON.readObject(at: hub),
+                  let port = ProviderJSON.double(json["httpPort"]).map(Int.init), (1...65_535).contains(port),
+                  let csrf = ProviderJSON.string(json["csrfToken"]),
+                  let pid = ProviderJSON.double(json["pid"]).map(Int32.init), Processes.isRunning(pid),
+                  let url = URL(string: "http://127.0.0.1:\(port)/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary")
+            else { continue }
+            var request = ProviderHTTP.request(url, method: "POST", headers: [
+                "Connect-Protocol-Version": "1",
+                "X-Codeium-Csrf-Token": csrf,
+            ], jsonBody: ["forceRefresh": true])
+            request.timeoutInterval = 10
+            guard let (status, data) = try? await send(request, in: environment), (200...299).contains(status),
+                  !buckets(in: data).isEmpty else { continue }
+            return data
+        }
+        return nil
+    }
+
+    /// `retrieveUserQuotaSummary` bodies from both hosts. Each counts only the
+    /// usage that went through it (production missed the app's Gemini use),
+    /// so `windows(fromSummaries:)` keeps the lower of the two.
     static func quotaSummaries(accessToken: String, project: String?,
                                in environment: ProviderEnvironment) async throws -> [Data] {
         let body: [String: Any] = project.map { ["project": $0] } ?? [:]
         var responses: [(status: Int, data: Data)] = []
         var transportError: Error?
-        for (index, base) in cloudCodeBases.enumerated() {
+        for base in cloudCodeBases {
             guard let url = URL(string: base + "/v1internal:retrieveUserQuotaSummary") else { continue }
             do {
-                let response = try await send(cloudCodeRequest(url, accessToken: accessToken, body: body), in: environment)
-                responses.append(response)
-                if index == 0, (200...299).contains(response.status), isCompleteSummary(response.data) { break }
+                responses.append(try await send(cloudCodeRequest(url, accessToken: accessToken, body: body), in: environment))
             } catch {
                 try Task.checkCancellation()
                 transportError = error
@@ -512,68 +563,62 @@ public struct AntigravityProvider: UsageProvider {
         throw ProviderFetchError.http(responses.first(where: { $0.status == 429 })?.status ?? responses.first?.status ?? 0)
     }
 
-    private struct Pool {
-        var key: String
+    struct Bucket: Equatable {
+        var id: String
+        var group: String?
         var title: String
-        var seconds: TimeInterval
+        var seconds: TimeInterval?
+        var fraction: Double
+        var resetsAt: Date?
     }
 
-    /// The shared pools Antigravity's Model Quota view shows, most important first.
-    private static let pools: [Pool] = [
-        Pool(key: "gemini-5h", title: "Gemini 5h", seconds: fiveHours),
-        Pool(key: "gemini-weekly", title: "Gemini weekly", seconds: week),
-        Pool(key: "argon-5h", title: "Argon 5h", seconds: fiveHours),
-        Pool(key: "argon-weekly", title: "Argon weekly", seconds: week),
-        Pool(key: "3p-5h", title: "Claude/GPT 5h", seconds: fiveHours),
-        Pool(key: "3p-weekly", title: "Claude/GPT weekly", seconds: week),
-    ]
-
-    static func isCompleteSummary(_ data: Data) -> Bool {
-        let measured = Set(buckets(in: data).map(\.key))
-        return ["gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly"].allSatisfy(measured.contains)
-    }
-
-    /// The first measured bucket per pool across the bodies.
+    /// Every bucket in the order the summaries list them, as Antigravity's
+    /// Usage view does; one reported by several bodies keeps its lowest share.
     static func windows(fromSummaries bodies: [Data]) -> [ProviderWindow] {
-        var measured: [String: (fraction: Double, resetsAt: Date?)] = [:]
+        var order: [String] = []
+        var lowest: [String: Bucket] = [:]
         for body in bodies {
-            for bucket in buckets(in: body) where measured[bucket.key] == nil {
-                measured[bucket.key] = (bucket.fraction, bucket.resetsAt)
+            for bucket in buckets(in: body) {
+                if let kept = lowest[bucket.id] {
+                    if bucket.fraction < kept.fraction { lowest[bucket.id] = bucket }
+                } else {
+                    order.append(bucket.id)
+                    lowest[bucket.id] = bucket
+                }
             }
         }
-        return pools.compactMap { pool in
-            guard let entry = measured[pool.key] else { return nil }
-            let remaining = min(1, max(0, entry.fraction))
-            return ProviderWindow(title: pool.title, usedPercent: (1 - remaining) * 100,
-                                  resetsAt: entry.resetsAt, windowSeconds: pool.seconds)
+        return order.compactMap { lowest[$0] }.map { bucket in
+            ProviderWindow(title: bucket.title, usedPercent: (1 - min(1, max(0, bucket.fraction))) * 100,
+                           resetsAt: bucket.resetsAt, windowSeconds: bucket.seconds, group: bucket.group)
         }
     }
 
-    /// Enabled buckets with a known remaining share, keyed by pool. Groups
-    /// other than the shared pools and Argon (model-specific allowances) are left out.
-    private static func buckets(in data: Data) -> [(key: String, fraction: Double, resetsAt: Date?)] {
+    /// Enabled buckets with a known remaining share and something to call
+    /// them, titled the way Antigravity's Usage view titles them.
+    static func buckets(in data: Data) -> [Bucket] {
         guard let json = object(data) else { return [] }
         let root = (json["response"] as? [String: Any]) ?? (json["summary"] as? [String: Any]) ?? json
         let groups = (root["groups"] as? [[String: Any]]) ?? []
-        var result: [(key: String, fraction: Double, resetsAt: Date?)] = []
+        var result: [Bucket] = []
         for group in groups {
-            let groupName = (ProviderJSON.string(group["displayName"]) ?? ProviderJSON.string(group["name"]) ?? "").lowercased()
-            let isArgon = groupName.contains("argon")
+            let groupName = ProviderJSON.string(group["displayName"]) ?? ProviderJSON.string(group["name"])
             for bucket in (group["buckets"] as? [[String: Any]]) ?? [] {
                 guard ProviderJSON.bool(bucket["disabled"]) != true,
                       let id = ProviderJSON.string(bucket["bucketId"]) ?? ProviderJSON.string(bucket["id"]),
                       let fraction = remainingFraction(bucket) else { continue }
                 let cadence = cadence(window: ProviderJSON.string(bucket["window"]), id: id)
-                let key: String
-                if isArgon {
-                    guard let cadence else { continue }
-                    key = "argon-\(cadence)"
-                } else if ["gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly"].contains(id) {
-                    key = id
-                } else {
-                    continue
+                let title: String
+                switch cadence {
+                case "5h": title = "5h limit"
+                case "weekly": title = "Weekly limit"
+                default:
+                    guard let name = ProviderJSON.string(bucket["displayName"]) else { continue }
+                    title = name.replacingOccurrences(of: " Remaining", with: "")
                 }
-                result.append((key, fraction, ProviderJSON.date(bucket["resetTime"] ?? bucket["reset_time"])))
+                result.append(Bucket(
+                    id: id, group: groupName, title: title,
+                    seconds: cadence == "5h" ? fiveHours : cadence == "weekly" ? week : nil,
+                    fraction: fraction, resetsAt: ProviderJSON.date(bucket["resetTime"] ?? bucket["reset_time"])))
             }
         }
         return result

@@ -23,7 +23,7 @@ final class StatusPanelController: NSObject {
     private let cost: CostModel
     private let extras: ExtraProvidersModel
     private let status: StatusModel
-    private let defaultTab: () -> MenuBarProvider
+    private let defaultTab: () -> String
     private let pickTab: (MenuBarProvider) -> Void
     private let openSettings: (SettingsPane) -> Void
     private let switchCodex: (String) -> Void
@@ -37,7 +37,7 @@ final class StatusPanelController: NSObject {
     private static let minHeight: CGFloat = 200
 
     init(claude: AppState, codex: AppModel, cost: CostModel, extras: ExtraProvidersModel, status: StatusModel,
-         defaultTab: @escaping () -> MenuBarProvider,
+         defaultTab: @escaping () -> String,
          pickTab: @escaping (MenuBarProvider) -> Void,
          openSettings: @escaping (SettingsPane) -> Void,
          switchCodex: @escaping (String) -> Void) {
@@ -65,7 +65,7 @@ final class StatusPanelController: NSObject {
         // That click meant "close", not "open again" (1.3.3 flickered).
         if Date().timeIntervalSince(closedAt) < 0.4 { return }
         self.button = button
-        tab.selected = defaultTab().rawValue // always open on the provider the icon shows
+        tab.selected = defaultTab() // always open on the provider the icon shows
         #if DEBUG
         // Screenshot aid: `--tab <id>` opens on that tab.
         if let flag = CommandLine.arguments.firstIndex(of: "--tab"), CommandLine.arguments.indices.contains(flag + 1) {

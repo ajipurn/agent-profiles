@@ -8,14 +8,23 @@ public struct UsageLimit: Equatable, Sendable, Identifiable {
     public var resetsAt: Date?
     /// Length of the window, for pacing. Nil when unknown.
     public var window: TimeInterval?
+    /// Heading the card shows above this limit ("Gemini Models"); limits in
+    /// a row with the same group share one heading.
+    public var group: String?
 
-    public var id: String { title }
+    public var id: String { fullTitle }
 
-    public init(title: String, remaining: Double?, resetsAt: Date? = nil, window: TimeInterval? = nil) {
+    /// The title with its group, for places without the heading
+    /// (notifications, tooltips): "Gemini Models · Weekly limit".
+    public var fullTitle: String { group.map { "\($0) · \(title)" } ?? title }
+
+    public init(title: String, remaining: Double?, resetsAt: Date? = nil, window: TimeInterval? = nil,
+                group: String? = nil) {
         self.title = title
         self.remaining = remaining
         self.resetsAt = resetsAt
         self.window = window
+        self.group = group
     }
 
     public func pace(now: Date = Date()) -> UsagePace {

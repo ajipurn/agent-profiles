@@ -79,8 +79,17 @@ public struct UsageCardView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        ForEach(model.limits) { limit in
-                            LimitRow(limit: limit, now: context.date)
+                        ForEach(Array(model.limits.enumerated()), id: \.element.id) { index, limit in
+                            if let group = limit.group, index == 0 || model.limits[index - 1].group != group {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(group)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .padding(.top, index == 0 ? 0 : 4)
+                                    LimitRow(limit: limit, now: context.date)
+                                }
+                            } else {
+                                LimitRow(limit: limit, now: context.date)
+                            }
                         }
                         if !model.details.isEmpty {
                             if !model.limits.isEmpty { Divider().opacity(0.6) }
@@ -236,8 +245,10 @@ private struct LimitRow: View {
         let pace = limit.pace(now: now)
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
+                // Under a group heading the title is secondary, as in Antigravity's Usage view.
                 Text(limit.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: limit.group == nil ? 13 : 12, weight: limit.group == nil ? .semibold : .medium))
+                    .foregroundStyle(limit.group == nil ? .primary : .secondary)
                 Spacer(minLength: 8)
                 paceNote(pace)
             }

@@ -7,6 +7,7 @@ import ClaudeProfilesCore
 import CodexProfilesCore
 import CodexProfilesUI
 import UsageHistoryCore
+import ProvidersCore
 
 @main
 struct AgentProfilesApp: App {
@@ -24,7 +25,7 @@ struct AgentProfilesApp: App {
 /// Owns the status item and its menu (CodexBar-style) for both providers:
 /// Claude (Desktop and CLI profiles, from Claude Profiles) and Codex (from
 /// Codex Profiles). The icon follows the provider picked in Settings, or the
-/// frontmost Claude/Codex app when that is turned on.
+/// frontmost Claude, Codex or More Providers app when that is turned on.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// `--demo`: sample accounts in throwaway directories. Nothing touches the
@@ -51,18 +52,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// by notification once it finishes.
     private var pendingCodexSwitch: String?
     private let alerts = AlertCenter()
-    /// Provider of the last Claude or Codex app brought to the front; other
-    /// apps leave it alone so the icon doesn't flip back and forth.
-    private var activeAppProvider: MenuBarProvider?
+    /// Provider ID of the last Claude, Codex or turned-on More Providers app
+    /// (Antigravity) brought to the front; other apps leave it alone so the
+    /// icon doesn't flip back and forth.
+    private var activeApp: String?
     /// Picking a provider (menu tab or Settings) overrides the detected app
     /// until the next Claude/Codex activation.
     private var lastPickedProvider: MenuBarProvider?
 
-    /// What the status item and the menu's opening tab show.
+    /// Claude or Codex, whichever the icon shows when no More Providers app is in front.
     private var displayedProvider: MenuBarProvider {
-        (Preferences.followActiveApp ? activeAppProvider : nil)
+        (Preferences.followActiveApp ? activeApp.flatMap(MenuBarProvider.init(rawValue:)) : nil)
             ?? (Preferences.followTightest ? tightestProvider : nil)
             ?? Preferences.menuBarProvider ?? .claude
+    }
+
+    /// What the status item and the panel's opening tab show (a provider ID).
+    private var displayedID: String {
+        if Preferences.followActiveApp, let extra = displayedExtra { return extra.id }
+        return displayedProvider.rawValue
+    }
+
+    /// The turned-on More Providers app in front, when the icon follows it.
+    private var displayedExtra: (any UsageProvider)? {
+        guard Preferences.followActiveApp, let activeApp, MenuBarProvider(rawValue: activeApp) == nil else { return nil }
+        return extras.active.first { $0.id == activeApp }
+    }
+
+    /// The provider whose desktop app has this bundle ID.
+    private func providerID(forBundleID bundleID: String?) -> String? {
+        MenuBarProvider(frontmostBundleID: bundleID)?.rawValue ?? extras.activeProvider(forBundleID: bundleID)?.id
     }
 
     /// Of Claude and Codex, the one with less left in either window.
@@ -142,11 +161,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         watchStatusPages()
         panel = StatusPanelController(
             claude: state, codex: codex, cost: cost, extras: extras, status: status,
-            defaultTab: { [weak self] in self?.displayedProvider ?? .claude },
+            defaultTab: { [weak self] in self?.displayedID ?? MenuBarProvider.claude.rawValue },
             pickTab: { [weak self] provider in
                 // Also overrides the detected app, even if the preference
                 // already matched.
-                self?.activeAppProvider = nil
+                self?.activeApp = nil
                 Preferences.menuBarProvider = provider
                 self?.updateStatusItem()
             },
@@ -159,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.imagePosition = .imageLeading
         lastPickedProvider = Preferences.menuBarProvider
-        activeAppProvider = MenuBarProvider(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        activeApp = providerID(forBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
         updateStatusItem()
 
         cancellables.append(state.objectWillChange
@@ -179,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 HotKeys.setPanelShortcut(Preferences.panelHotKey)
                 if Preferences.menuBarProvider != self.lastPickedProvider {
                     self.lastPickedProvider = Preferences.menuBarProvider
-                    self.activeAppProvider = nil
+                    self.activeApp = nil
                 }
                 self.updateStatusItem()
             }
@@ -188,10 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            guard let provider = MenuBarProvider(frontmostBundleID: app?.bundleIdentifier) else { return }
+            let bundleID = app?.bundleIdentifier
             Task { @MainActor in
-                guard let self, self.activeAppProvider != provider else { return }
-                self.activeAppProvider = provider
+                guard let self, let id = self.providerID(forBundleID: bundleID), self.activeApp != id else { return }
+                self.activeApp = id
                 self.updateStatusItem()
             }
         })
@@ -306,7 +325,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             alerts.signIn(provider: provider.name, expired: extras.states[provider.id]?.isUnauthorized == true)
             let card = extras.cardModel(provider)
             guard !card.isStale else { continue }
-            alerts.evaluate(provider: provider.name, account: card.account ?? provider.name, limits: card.limits)
+            // Notifications have no group headings: name the group in the title.
+            let limits = card.limits.map { limit in
+                var limit = limit
+                limit.title = limit.fullTitle
+                limit.group = nil
+                return limit
+            }
+            alerts.evaluate(provider: provider.name, account: card.account ?? provider.name, limits: limits)
         }
         alerts.signIn(provider: "Codex", expired: codex.liveUsage.error == AppModel.signInAgainMessage)
         if state.mode == .ready {
@@ -417,9 +443,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.toolTip = "Switching accounts…"
             return
         }
-        let card = displayedProvider == .claude ? state.cardModel : codex.cardModel
-        let session = card.sessionRemaining
-        let weekly = card.weeklyRemaining
+        let card: UsageCardModel
+        let session: Double?, weekly: Double?
+        if let extra = displayedExtra {
+            card = extras.cardModel(extra)
+            (session, weekly) = extras.primaryRemaining(extra.id)
+        } else {
+            card = displayedProvider == .claude ? state.cardModel : codex.cardModel
+            (session, weekly) = (card.sessionRemaining, card.weeklyRemaining)
+        }
         button.image = UsageIcon.image(session: session, weekly: weekly,
                                        dimmed: card.isStale || (session == nil && weekly == nil))
         if Preferences.showPercent, let value = Preferences.menuBarMetric.value(session: session, weekly: weekly) {
@@ -450,6 +482,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             lines.append(line)
         } else {
             lines.append("Codex: not signed in")
+        }
+        if let extra = displayedExtra, let windows = extras.states[extra.id]?.snapshot?.primaryWindows, !windows.isEmpty {
+            let parts = windows.map { "\(UsageFormat.percent($0.remainingPercent)) of \($0.title.lowercased()) left" }
+            lines.append("\(extra.name): " + parts.joined(separator: ", "))
         }
         return lines.joined(separator: "\n")
     }

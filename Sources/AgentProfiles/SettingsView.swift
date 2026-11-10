@@ -152,7 +152,7 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Menu Bar")
             } footer: {
-                Text("The icon's top bar is the session window, the bottom bar the weekly one. When following the active app, bringing Claude or Codex to the front switches the icon to it; other apps, including terminals, keep the last one. Otherwise “less left” shows the provider closer to its limit.")
+                Text("The icon's top bar is the session window, the bottom bar the weekly one. When following the active app, bringing Claude, Codex or Antigravity (once it is on in More Providers) to the front switches the icon to it; other apps, including terminals, keep the last one. Otherwise “less left” shows the provider closer to its limit.")
                     .foregroundStyle(.secondary)
             }
             Section {
