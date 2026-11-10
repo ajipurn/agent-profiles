@@ -53,7 +53,7 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "ProvidersCoreTests",
-        dependencies: ["ProvidersCore"],
+        dependencies: ["PlatformSupport", "ProvidersCore"],
         resources: [.copy("Fixtures")]
     ),
     .testTarget(

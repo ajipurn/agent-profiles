@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var updates: UpdateController!
     private var cost: CostModel!
     private var extras: ExtraProvidersModel!
+    private var antigravity: AntigravityAccountsModel!
     private var status: StatusModel!
     private var history: UsageHistory!
     private var claudeDemoHome: URL?
@@ -157,10 +158,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         cost = CostModel(home: claudeDemoHome ?? FileManager.default.homeDirectoryForCurrentUser)
         cost.refresh()
         extras = ExtraProvidersModel(demo: isDemo)
+        antigravity = AntigravityAccountsModel(demo: isDemo)
+        antigravity.isActive = { [weak self] in self?.extras.isEnabled(AntigravityAccountsModel.providerID) == true }
+        antigravity.signInChanged = { [weak self] in self?.extras.refresh(force: true) }
+        antigravity.refresh()
         status = StatusModel(demo: isDemo)
         watchStatusPages()
         panel = StatusPanelController(
-            claude: state, codex: codex, cost: cost, extras: extras, status: status,
+            claude: state, codex: codex, cost: cost, extras: extras, antigravity: antigravity, status: status,
             defaultTab: { [weak self] in self?.displayedID ?? MenuBarProvider.claude.rawValue },
             pickTab: { [weak self] provider in
                 // Also overrides the detected app, even if the preference
@@ -255,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Sparkle may only relaunch while no account operation is in flight.
     private var canRelaunchForUpdate: Bool {
         !state.isSwitching && !codex.isBusy && !codex.pendingNewLogin
+            && !antigravity.isBusy && !antigravity.awaitingSignIn
     }
 
     /// The Codex model is @Observable, so there is no objectWillChange to
@@ -354,6 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// - `agentprofiles://claude-cli/<name>` the Claude Code profile
     ///   (`Default` = the plain ~/.claude account),
     /// - `agentprofiles://codex/<name>` Codex (name, label or email),
+    /// - `agentprofiles://antigravity/<email>` Antigravity,
     /// - `agentprofiles://open[/<pane>]` opens Settings.
     /// Claude Profiles' `claudeprofiles://switch|switch-cli|open` still work.
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -392,6 +399,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     continue
                 }
                 switchCodex(id)
+            case "antigravity":
+                guard let name, let id = antigravity.accountID(matching: name) else {
+                    Notifier.post("Unknown account", "No saved Antigravity account “\(name ?? "?")”.")
+                    continue
+                }
+                antigravity.switchTo(id)
             default:
                 break
             }
@@ -498,7 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let pane { UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.storageKey) }
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView(claude: state, codex: codex, providers: extras,
-                                                                  updates: updates, history: history))
+                                                                  antigravity: antigravity, updates: updates, history: history))
             let window = NSWindow(contentViewController: host)
             window.title = "Agent Profiles Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]

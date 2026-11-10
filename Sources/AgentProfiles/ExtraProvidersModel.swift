@@ -4,8 +4,9 @@ import ProvidersCore
 
 /// Providers beyond Claude and Codex (Gemini, Copilot, …). Each is off until
 /// turned on in Settings → More Providers; turned on, it is read every five
-/// minutes and whenever the panel opens (at most every two). Read-only: no
-/// account switching, and nothing is written to the providers' own files.
+/// minutes and whenever the panel opens (at most every two). Read-only:
+/// nothing is written to the providers' own files. Antigravity's accounts
+/// switch through `AntigravityAccountsModel`.
 @MainActor
 final class ExtraProvidersModel: ObservableObject {
     static let enabledKey = "enabledProviders"

@@ -63,6 +63,7 @@ struct SettingsView: View {
     let claude: AppState
     let codex: AppModel
     let providers: ExtraProvidersModel
+    let antigravity: AntigravityAccountsModel
     let updates: UpdateController
     let history: UsageHistory
     @AppStorage(SettingsPane.storageKey) private var pane: SettingsPane = .general
@@ -94,7 +95,7 @@ struct SettingsView: View {
                 switch pane {
                 case .general: GeneralSettingsView(updates: updates)
                 case .notifications: NotificationSettingsView()
-                case .providers: ProvidersSettingsView(providers: providers)
+                case .providers: ProvidersSettingsView(providers: providers, antigravity: antigravity)
                 case .claude: ClaudeSettingsView(state: claude)
                 case .codex: CodexSettingsView(model: codex)
                 case .history: HistoryView(history: history, accounts: historyAccounts)
@@ -303,6 +304,7 @@ struct NotificationSettingsView: View {
 /// or CLI keeps on this Mac and asks that service for usage.
 struct ProvidersSettingsView: View {
     @ObservedObject var providers: ExtraProvidersModel
+    @ObservedObject var antigravity: AntigravityAccountsModel
 
     var body: some View {
         Form {
@@ -313,8 +315,11 @@ struct ProvidersSettingsView: View {
             } header: {
                 Text("Providers")
             } footer: {
-                Text("Turned on, a provider reads the sign-in its own app or CLI left on this Mac and asks that service for your usage every five minutes. Agent Profiles never changes those files. Sign in or out in the provider's own tool.")
+                Text("Turned on, a provider reads the sign-in its own app or CLI left on this Mac and asks that service for your usage every five minutes. Agent Profiles never changes those sign-ins, except Antigravity's when you switch or add its accounts. Otherwise, sign in or out in the provider's own tool.")
                     .foregroundStyle(.secondary)
+            }
+            if providers.isEnabled(AntigravityAccountsModel.providerID) {
+                AntigravityAccountsSection(model: antigravity)
             }
         }
         .formStyle(.grouped)
@@ -353,5 +358,57 @@ struct ProvidersSettingsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
+    }
+}
+
+/// Antigravity's saved Google accounts: switch, add, forget.
+struct AntigravityAccountsSection: View {
+    @ObservedObject var model: AntigravityAccountsModel
+
+    var body: some View {
+        Section {
+            ForEach(model.accounts) { account in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.email)
+                        if let error = model.errors[account.id] {
+                            Text(error).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    if account.id == model.liveAccount?.id {
+                        Text("In use").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Button("Switch") { model.switchTo(account.id.uuidString) }
+                            .disabled(!model.canSwitch)
+                        Button {
+                            model.remove(account.id)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Forget this account")
+                        .disabled(!model.canSwitch)
+                    }
+                }
+            }
+            HStack {
+                if model.awaitingSignIn {
+                    Text("Sign in to Antigravity with the account to add…").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { model.cancelAdd() }
+                } else {
+                    Button(model.accounts.isEmpty ? "Save This Account and Add Another…" : "Add Account…") { model.add() }
+                        .disabled(!model.canSwitch)
+                    if model.isBusy { ProgressView().controlSize(.small) }
+                }
+            }
+        } header: {
+            Text("Antigravity Accounts")
+        } footer: {
+            Text("Switching quits Antigravity, swaps its sign-in and opens it again; `agy` follows too. Add Account saves the account signed in now, then opens Antigravity signed out so you can sign in with another Google account. Saved sign-ins stay in your login Keychain.")
+                .foregroundStyle(.secondary)
+        }
+        .task { model.refresh() }
     }
 }
