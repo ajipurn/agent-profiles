@@ -107,11 +107,11 @@ final class AntigravityAccountsModel: ObservableObject {
         let current = generation
         let store = store
         let capture = !accounts.isEmpty || !store.list().isEmpty
-        let (accounts, email) = await Task.detached { () -> ([AntigravityAccount], String?) in
-            let email = store.liveEmail()
+        let (accounts, email) = await Task.detached { () async -> ([AntigravityAccount], String?) in
+            let email = await store.liveEmail()
             // Once accounts are being saved, keep any that signs in.
             if capture, let email, !store.list().contains(where: { $0.matches(email) }) {
-                _ = try? store.saveLive()
+                _ = try? await store.saveLive()
             }
             return (store.list(), email)
         }.value
@@ -239,7 +239,7 @@ final class AntigravityAccountsModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, let self, self.awaitingSignIn else { return }
-                if let account = await Task.detached(operation: { store.finishAdding() }).value {
+                if let account = await Task.detached(operation: { await store.finishAdding() }).value {
                     self.awaitingSignIn = false
                     self.previousAccount = nil
                     Notifier.post("Antigravity: \(account.email) saved",

@@ -75,22 +75,45 @@ private final class FakeApp: AntigravityAppControl, @unchecked Sendable {
     }
 }
 
-/// A stored sign-in as Antigravity writes it, for `email`.
-private func signIn(_ email: String, access: String = "ya29.access", refresh: String? = nil) -> String {
-    let json: [String: Any] = [
-        "token": ["access_token": access, "refresh_token": refresh ?? "1//refresh-\(email)",
+/// A stored sign-in as Antigravity writes it, for `email`; nil leaves the
+/// email out, as a fresh sign-in does.
+private func signIn(_ email: String?, access: String = "ya29.access", refresh: String? = nil) -> String {
+    var json: [String: Any] = [
+        "token": ["access_token": access, "refresh_token": refresh ?? "1//refresh-\(email ?? "none")",
                   "expiry": "2026-11-10T10:00:00.123456789+07:00", "token_type": "Bearer"],
         "auth_method": "consumer",
-        "id_token_email": email,
     ]
+    json["id_token_email"] = email
     let data = try! JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
     return GoKeyring.encode(String(decoding: data, as: UTF8.self))
+}
+
+/// Google's answer to "whose sign-in is this", counted.
+private final class Lookup: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answer: String?
+    private var asked = 0
+
+    init(_ answer: String? = nil) { self.answer = answer }
+
+    var count: Int { lock.withLock { asked } }
+
+    func callAsFunction(_ signIn: String) -> String? {
+        lock.withLock {
+            asked += 1
+            return answer
+        }
+    }
 }
 
 private struct Sandbox {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("antigravity-accounts-\(UUID().uuidString)")
     let vault = MemoryVault()
-    var accounts: AntigravityAccounts { AntigravityAccounts(folder: folder, vault: vault) }
+    var lookup = Lookup()
+    var accounts: AntigravityAccounts {
+        let lookup = lookup
+        return AntigravityAccounts(folder: folder, vault: vault, lookUpEmail: { lookup($0) })
+    }
 
     func remove() { try? FileManager.default.removeItem(at: folder) }
 
@@ -100,20 +123,20 @@ private struct Sandbox {
 }
 
 @Suite struct AntigravityAccountsTests {
-    @Test func savesTheSignInByItsAccount() throws {
+    @Test func savesTheSignInByItsAccount() async throws {
         let sandbox = Sandbox()
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
-        #expect(try accounts.saveLive() == nil)
+        #expect(try await accounts.saveLive() == nil)
 
         sandbox.vault.live = signIn("one@example.com")
-        let first = try #require(try accounts.saveLive())
+        let first = try #require(try await accounts.saveLive())
         #expect(first.email == "one@example.com")
         #expect(sandbox.saved(first) == sandbox.vault.live)
 
         // Antigravity renewed its token: same account, newer copy.
         sandbox.vault.live = signIn("ONE@example.com", access: "ya29.renewed")
-        let again = try #require(try accounts.saveLive())
+        let again = try #require(try await accounts.saveLive())
         #expect(again.id == first.id)
         #expect(accounts.list().map(\.email) == ["one@example.com"])
         #expect(accounts.signIn(first.id)?.contains("ya29.renewed") == true)
@@ -132,12 +155,41 @@ private struct Sandbox {
         #expect(AntigravityAccounts.email(ofStored: "not json") == nil)
     }
 
-    @Test func aSignInWithoutAnAccountIsNotSaved() throws {
+    @Test func aSignInWithoutAnAccountIsNotSaved() async throws {
         let sandbox = Sandbox()
         defer { sandbox.remove() }
-        sandbox.vault.live = GoKeyring.encode(#"{"token":{"access_token":"a"}}"#)
-        #expect(throws: AntigravityAccountError.unknownSignIn) { try sandbox.accounts.saveLive() }
+        sandbox.vault.live = signIn(nil, refresh: "1//\(UUID())")
+        await #expect(throws: AntigravityAccountError.unknownSignIn) { try await sandbox.accounts.saveLive() }
         #expect(sandbox.accounts.list().isEmpty)
+    }
+
+    @Test func aFreshSignInIsNamedByGoogleOnce() async throws {
+        var sandbox = Sandbox()
+        defer { sandbox.remove() }
+        sandbox.lookup = Lookup("fresh@example.com")
+        let accounts = sandbox.accounts
+        // Right after signing in, Antigravity's item has no id_token_email.
+        sandbox.vault.live = signIn(nil, refresh: "1//\(UUID())")
+
+        let added = try #require(try await accounts.saveLive())
+
+        #expect(added.email == "fresh@example.com")
+        #expect(await accounts.liveEmail() == "fresh@example.com")
+        #expect(sandbox.lookup.count == 1)
+    }
+
+    @Test func aSavedAccountsTokenNamesItWithoutAsking() async throws {
+        let sandbox = Sandbox()
+        defer { sandbox.remove() }
+        let accounts = sandbox.accounts
+        let refresh = "1//\(UUID())"
+        sandbox.vault.live = signIn("one@example.com", refresh: refresh)
+        let one = try #require(try await accounts.saveLive())
+        sandbox.vault.live = signIn(nil, access: "ya29.renewed", refresh: refresh)
+
+        #expect(try await accounts.saveLive()?.id == one.id)
+        #expect(sandbox.lookup.count == 0)
+        #expect(accounts.list().count == 1)
     }
 
     @Test func switchingSwapsTheSignInAndReopensAntigravity() async throws {
@@ -145,16 +197,16 @@ private struct Sandbox {
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
         sandbox.vault.live = signIn("two@example.com")
-        let two = try #require(try accounts.saveLive())
+        let two = try #require(try await accounts.saveLive())
         sandbox.vault.live = signIn("one@example.com")
-        let one = try #require(try accounts.saveLive())
+        let one = try #require(try await accounts.saveLive())
         let app = FakeApp(running: true)
         // Antigravity renews its token as it quits; that copy must be kept.
         app.onQuit = { sandbox.vault.live = signIn("one@example.com", access: "ya29.on-quit") }
 
         try await accounts.switchTo(two.id, app: app)
 
-        #expect(accounts.liveEmail() == "two@example.com")
+        #expect(await accounts.liveEmail() == "two@example.com")
         #expect(app.events == ["quit", "launch"])
         #expect(accounts.signIn(one.id)?.contains("ya29.on-quit") == true)
         #expect(await app.isRunning())
@@ -165,14 +217,14 @@ private struct Sandbox {
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
         sandbox.vault.live = signIn("two@example.com")
-        let two = try #require(try accounts.saveLive())
+        let two = try #require(try await accounts.saveLive())
         sandbox.vault.live = signIn("one@example.com")
-        _ = try accounts.saveLive()
+        _ = try await accounts.saveLive()
         let app = FakeApp(running: false)
 
         try await accounts.switchTo(two.id, app: app)
 
-        #expect(accounts.liveEmail() == "two@example.com")
+        #expect(await accounts.liveEmail() == "two@example.com")
         #expect(app.events == ["quit"])
     }
 
@@ -180,7 +232,7 @@ private struct Sandbox {
         let sandbox = Sandbox()
         defer { sandbox.remove() }
         sandbox.vault.live = signIn("one@example.com")
-        let one = try #require(try sandbox.accounts.saveLive())
+        let one = try #require(try await sandbox.accounts.saveLive())
         let app = FakeApp(running: true)
 
         try await sandbox.accounts.switchTo(one.id, app: app)
@@ -193,13 +245,13 @@ private struct Sandbox {
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
         sandbox.vault.live = signIn("two@example.com")
-        let two = try #require(try accounts.saveLive())
+        let two = try #require(try await accounts.saveLive())
         sandbox.vault.live = signIn("one@example.com")
         let app = FakeApp(running: true)
         app.refusesToQuit = true
 
         await #expect(throws: AntigravityAccountError.appStillRunning) { try await accounts.switchTo(two.id, app: app) }
-        #expect(accounts.liveEmail() == "one@example.com")
+        #expect(await accounts.liveEmail() == "one@example.com")
     }
 
     @Test func aFailedWriteReopensAntigravityAsItWas() async throws {
@@ -207,14 +259,14 @@ private struct Sandbox {
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
         sandbox.vault.live = signIn("two@example.com")
-        let two = try #require(try accounts.saveLive())
+        let two = try #require(try await accounts.saveLive())
         sandbox.vault.live = signIn("one@example.com")
-        _ = try accounts.saveLive()
+        _ = try await accounts.saveLive()
         let app = FakeApp(running: true)
         sandbox.vault.failWrites = true
 
         await #expect(throws: GoKeyring.KeychainError.writeFailed) { try await accounts.switchTo(two.id, app: app) }
-        #expect(accounts.liveEmail() == "one@example.com")
+        #expect(await accounts.liveEmail() == "one@example.com")
         #expect(app.events == ["quit", "launch"])
     }
 
@@ -223,7 +275,7 @@ private struct Sandbox {
         defer { sandbox.remove() }
         let accounts = sandbox.accounts
         sandbox.vault.live = signIn("two@example.com")
-        let two = try #require(try accounts.saveLive())
+        let two = try #require(try await accounts.saveLive())
         sandbox.vault.live = signIn("one@example.com")
         try accounts.remove(two.id)
         #expect(sandbox.saved(two) == nil)
@@ -245,10 +297,10 @@ private struct Sandbox {
         #expect(previous?.email == "one@example.com")
         #expect(sandbox.vault.live == nil)
         #expect(app.events == ["quit", "launch in front"])
-        #expect(accounts.finishAdding() == nil)
+        #expect(await accounts.finishAdding() == nil)
 
         sandbox.vault.live = signIn("two@example.com")
-        let added = try #require(accounts.finishAdding())
+        let added = try #require(await accounts.finishAdding())
         #expect(added.email == "two@example.com")
         #expect(accounts.list().map(\.email) == ["one@example.com", "two@example.com"])
     }
@@ -261,7 +313,7 @@ private struct Sandbox {
         app.installed = false
 
         await #expect(throws: AntigravityAccountError.appMissing) { try await sandbox.accounts.beginAdding(app: app) }
-        #expect(sandbox.accounts.liveEmail() == "one@example.com")
+        #expect(await sandbox.accounts.liveEmail() == "one@example.com")
         #expect(app.events.isEmpty)
     }
 
@@ -275,7 +327,7 @@ private struct Sandbox {
 
         try await accounts.cancelAdding(restoring: previous?.id, app: app)
 
-        #expect(accounts.liveEmail() == "one@example.com")
+        #expect(await accounts.liveEmail() == "one@example.com")
         #expect(app.events == ["quit", "launch in front", "quit", "launch"])
     }
 
@@ -290,7 +342,7 @@ private struct Sandbox {
 
         try await accounts.cancelAdding(restoring: previous?.id, app: app)
 
-        #expect(accounts.liveEmail() == "two@example.com")
+        #expect(await accounts.liveEmail() == "two@example.com")
         #expect(accounts.list().map(\.email) == ["one@example.com", "two@example.com"])
         #expect(app.events == ["quit", "launch in front"])
     }
