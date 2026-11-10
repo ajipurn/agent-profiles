@@ -5,16 +5,16 @@ import FoundationNetworking
 import PlatformSupport
 
 /// Google Antigravity's model quota (Gemini and Claude/GPT pools, 5-hour and
-/// weekly), read from Cloud Code with the Google sign-in the `agy` CLI keeps
-/// in `~/.gemini/antigravity-cli/antigravity-oauth-token` (its file token
-/// store, used where no keyring is available). Sign-ins kept only in the
-/// Keychain or inside the running Antigravity app are not read: the Keychain
-/// prompts, and the app's local language server needs process and port
-/// discovery that is too fragile for a menu bar poll.
+/// weekly), read from Cloud Code with the Google sign-in that the Antigravity
+/// app and the `agy` CLI share. On macOS they keep it in the login Keychain
+/// (go-keyring, service `gemini`, account `antigravity`), read through
+/// `/usr/bin/security`, which the item trusts, so there is no prompt.
+/// Elsewhere, and where no keyring is available, `agy` keeps it in
+/// `~/.gemini/antigravity-cli/antigravity-oauth-token`.
 ///
 /// An expired access token is renewed in memory with Antigravity's OAuth
 /// client (`ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET`, or read from the
-/// installed `agy` / Antigravity app); the token file is never written.
+/// installed `agy` / Antigravity app); the stored sign-in is never written.
 public struct AntigravityProvider: UsageProvider {
     public let id = "antigravity"
     public let name = "Antigravity"
@@ -24,15 +24,22 @@ public struct AntigravityProvider: UsageProvider {
     /// Where installed artifacts are looked for (the `agy` binary and the
     /// Antigravity app bundles). Nil means the defaults; tests set it.
     var artifactSearchPaths: [URL]?
+    /// The Keychain sign-in. Nil means the login Keychain; tests set it.
+    var keychainSignIn: (@Sendable () -> String?)?
+
+    static let keychainService = "gemini"
+    static let keychainAccount = "antigravity"
 
     public init() {}
 
     public func isSignedIn(in environment: ProviderEnvironment) -> Bool {
-        FileManager.default.fileExists(atPath: Self.tokenURL(environment).path)
+        if FileManager.default.fileExists(atPath: Self.tokenURL(environment).path) { return true }
+        if let keychainSignIn { return keychainSignIn() != nil }
+        return GoKeyring.contains(service: Self.keychainService, account: Self.keychainAccount)
     }
 
     public func fetch(in environment: ProviderEnvironment) async throws -> ProviderSnapshot {
-        let credentials = try Self.readCredentials(environment)
+        let credentials = try readCredentials(environment)
         let token = try await accessToken(for: credentials, in: environment)
         let claims = ProviderJSON.jwtClaims(token.idToken)
 
@@ -47,7 +54,7 @@ public struct AntigravityProvider: UsageProvider {
         // A measured 5-hour pool contradicts a generic "Free" tier label.
         if plan == "Free", windows.contains(where: { $0.windowSeconds == Self.fiveHours }) { plan = nil }
 
-        var account = ProviderJSON.string(claims?["email"])
+        var account = ProviderJSON.string(claims?["email"]) ?? credentials.email
         if account == nil {
             account = await Self.userInfoEmail(accessToken: token.accessToken, in: environment)
         }
@@ -82,7 +89,7 @@ public struct AntigravityProvider: UsageProvider {
     static let fiveHours: TimeInterval = 5 * 3600
     static let week: TimeInterval = 7 * 86_400
 
-    // MARK: - Local token file
+    // MARK: - Stored sign-in
 
     static func tokenURL(_ environment: ProviderEnvironment) -> URL {
         environment.home.appendingPathComponent(".gemini/antigravity-cli/antigravity-oauth-token")
@@ -93,28 +100,43 @@ public struct AntigravityProvider: UsageProvider {
         var refreshToken: String?
         var idToken: String?
         var expiresAt: Date?
+        var email: String?
+    }
+
+    /// The `agy` token file when there is one (it holds an ID token), else the Keychain item.
+    func readCredentials(_ environment: ProviderEnvironment) throws -> Credentials {
+        let url = Self.tokenURL(environment)
+        if FileManager.default.fileExists(atPath: url.path) {
+            guard let json = ProviderJSON.readObject(at: url) else {
+                throw ProviderFetchError.notSignedIn(
+                    "Antigravity's sign-in file couldn't be read. Run `agy` and sign in again.")
+            }
+            return Self.credentials(json)
+        }
+        let stored = keychainSignIn.map { $0() }
+            ?? GoKeyring.password(service: Self.keychainService, account: Self.keychainAccount)
+        if let stored {
+            guard let json = Self.object(Data(stored.utf8)) else {
+                throw ProviderFetchError.notSignedIn(
+                    "Antigravity's saved sign-in couldn't be read. Sign out of Antigravity and sign in again.")
+            }
+            return Self.credentials(json)
+        }
+        throw ProviderFetchError.notSignedIn(
+            "No Antigravity sign-in found. Sign in to the Antigravity app or the `agy` CLI.")
     }
 
     /// `{"token": {"access_token", "refresh_token", "expiry"}, "auth_method", "id_token"}`,
-    /// the JSON form of Go's `oauth2.Token` that `agy` writes.
-    static func readCredentials(_ environment: ProviderEnvironment) throws -> Credentials {
-        let url = tokenURL(environment)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw ProviderFetchError.notSignedIn(
-                "No Antigravity sign-in file found. Agent Profiles reads the one `agy` saves in "
-                    + "~/.gemini/antigravity-cli; sign-ins kept only in the Keychain or the Antigravity app "
-                    + "can't be read.")
-        }
-        guard let json = ProviderJSON.readObject(at: url) else {
-            throw ProviderFetchError.notSignedIn(
-                "Antigravity's sign-in file couldn't be read. Run `agy` and sign in again.")
-        }
+    /// the JSON form of Go's `oauth2.Token` that Antigravity writes. The
+    /// Keychain copy carries `id_token_email` in place of the ID token.
+    static func credentials(_ json: [String: Any]) -> Credentials {
         let token = (json["token"] as? [String: Any]) ?? json
         return Credentials(
             accessToken: ProviderJSON.string(token["access_token"] ?? token["accessToken"]),
             refreshToken: ProviderJSON.string(token["refresh_token"] ?? token["refreshToken"]),
             idToken: ProviderJSON.string(json["id_token"] ?? token["id_token"] ?? json["idToken"]),
-            expiresAt: goTime(token["expiry"] ?? token["expiry_date"]))
+            expiresAt: goTime(token["expiry"] ?? token["expiry_date"]),
+            email: ProviderJSON.string(json["id_token_email"]))
     }
 
     /// Go writes RFC 3339 with up to nine fractional digits; the zero time
@@ -139,6 +161,14 @@ public struct AntigravityProvider: UsageProvider {
 
     /// Tokens renewed in this process, by refresh token. Never persisted.
     private static let renewedTokens = LockedValue<[String: CachedToken]>([:])
+    /// The client that last renewed a sign-in; tried first next time.
+    private static let workingClient = LockedValue<OAuthClient?>(nil)
+    /// Sign-ins (refresh token and candidates, hashed) that no candidate
+    /// could renew, so a poll doesn't ask Google again until either changes.
+    private static let unrenewable = LockedValue<Set<Int>>([])
+
+    static let expiredHint = "Antigravity's saved sign-in has expired. Open Antigravity or run `agy` once to renew it, "
+        + "or set ANTIGRAVITY_OAUTH_CLIENT_ID and ANTIGRAVITY_OAUTH_CLIENT_SECRET."
 
     func accessToken(for credentials: Credentials,
                      in environment: ProviderEnvironment) async throws -> (accessToken: String, idToken: String?) {
@@ -151,53 +181,80 @@ public struct AntigravityProvider: UsageProvider {
         if let cached = Self.renewedTokens.withLock({ $0[refreshToken] }), cached.expiresAt.timeIntervalSince(now) > 60 {
             return (cached.accessToken, cached.idToken ?? credentials.idToken)
         }
-        guard let client = oauthClient(in: environment, idToken: credentials.idToken) else {
-            throw ProviderFetchError.notSignedIn(
-                "Antigravity's saved sign-in has expired. Run `agy` once to renew it, or set "
-                    + "ANTIGRAVITY_OAUTH_CLIENT_ID and ANTIGRAVITY_OAUTH_CLIENT_SECRET.")
+        let clients = oauthClients(in: environment, idToken: credentials.idToken)
+        var hasher = Hasher()
+        hasher.combine(refreshToken)
+        hasher.combine(clients)
+        let attempt = hasher.finalize()
+        guard !clients.isEmpty, !Self.unrenewable.withLock({ $0.contains(attempt) }) else {
+            throw ProviderFetchError.notSignedIn(Self.expiredHint)
         }
-        let request = ProviderHTTP.request(Self.oauthTokenURL, method: "POST", formBody: [
-            "client_id": client.id,
-            "client_secret": client.secret,
-            "refresh_token": refreshToken,
-            "grant_type": "refresh_token",
-        ])
-        let (status, data) = try await Self.send(request, in: environment)
-        guard (200...299).contains(status) else {
-            if status >= 500 { throw ProviderFetchError.http(status) }
-            throw ProviderFetchError.unauthorized
+        for client in clients {
+            let request = ProviderHTTP.request(Self.oauthTokenURL, method: "POST", formBody: [
+                "client_id": client.id,
+                "client_secret": client.secret,
+                "refresh_token": refreshToken,
+                "grant_type": "refresh_token",
+            ])
+            let (status, data) = try await Self.send(request, in: environment)
+            guard (200...299).contains(status) else {
+                if status >= 500 { throw ProviderFetchError.http(status) }
+                if Self.isWrongClient(status, data) { continue }
+                throw ProviderFetchError.unauthorized
+            }
+            guard let json = Self.object(data), let accessToken = ProviderJSON.string(json["access_token"]) else {
+                throw ProviderFetchError.invalidResponse
+            }
+            Self.workingClient.withLock { $0 = client }
+            let renewed = CachedToken(
+                accessToken: accessToken,
+                idToken: ProviderJSON.string(json["id_token"]),
+                expiresAt: now.addingTimeInterval(ProviderJSON.double(json["expires_in"]) ?? 3600))
+            Self.renewedTokens.withLock { $0[refreshToken] = renewed }
+            return (accessToken, renewed.idToken ?? credentials.idToken)
         }
-        guard let json = Self.object(data), let accessToken = ProviderJSON.string(json["access_token"]) else {
-            throw ProviderFetchError.invalidResponse
-        }
-        let renewed = CachedToken(
-            accessToken: accessToken,
-            idToken: ProviderJSON.string(json["id_token"]),
-            expiresAt: now.addingTimeInterval(ProviderJSON.double(json["expires_in"]) ?? 3600))
-        Self.renewedTokens.withLock { $0[refreshToken] = renewed }
-        return (accessToken, renewed.idToken ?? credentials.idToken)
+        Self.unrenewable.withLock { _ = $0.insert(attempt) }
+        throw ProviderFetchError.notSignedIn(Self.expiredHint)
+    }
+
+    /// Google's answer to a client that didn't issue the refresh token
+    /// (`unauthorized_client`) or a mismatched secret (`invalid_client`).
+    static func isWrongClient(_ status: Int, _ data: Data) -> Bool {
+        guard status == 400 || status == 401 else { return false }
+        let error = ProviderJSON.string(object(data)?["error"])
+        return error == "unauthorized_client" || error == "invalid_client"
     }
 
     // MARK: - OAuth client
 
-    struct OAuthClient: Equatable, Sendable {
+    struct OAuthClient: Hashable, Sendable {
         var id: String
         var secret: String
     }
 
-    func oauthClient(in environment: ProviderEnvironment, idToken: String?) -> OAuthClient? {
+    /// Clients to renew with, most likely first: the environment's pair alone
+    /// when set, else the pairings found in the installed artifacts.
+    func oauthClients(in environment: ProviderEnvironment, idToken: String?) -> [OAuthClient] {
         let variables = environment.variables
         if let id = ProviderJSON.string(variables["ANTIGRAVITY_OAUTH_CLIENT_ID"]),
            let secret = ProviderJSON.string(variables["ANTIGRAVITY_OAUTH_CLIENT_SECRET"]) {
-            return OAuthClient(id: id, secret: secret)
+            return [OAuthClient(id: id, secret: secret)]
         }
         // The ID token's audience names the client that issued the sign-in.
+        // The Keychain copy has no ID token, so every pairing is a candidate.
         let claims = ProviderJSON.jwtClaims(idToken)
         let audience = ProviderJSON.string(claims?["aud"]) ?? ProviderJSON.string(claims?["azp"])
+        var clients: [OAuthClient] = []
         for artifact in artifactURLs(in: environment) {
-            if let client = Self.cachedClient(inArtifact: artifact, audience: audience) { return client }
+            for client in Self.cachedClients(inArtifact: artifact, audience: audience) where !clients.contains(client) {
+                clients.append(client)
+            }
         }
-        return nil
+        clients = Array(clients.prefix(Self.maxCandidates))
+        if let working = Self.workingClient.withLock({ $0 }), let index = clients.firstIndex(of: working) {
+            clients.insert(clients.remove(at: index), at: 0)
+        }
+        return clients
     }
 
     /// `agy` first (it issued the token file), then the Antigravity app bundles.
@@ -251,7 +308,7 @@ public struct AntigravityProvider: UsageProvider {
     /// Scans by path, size and modification date, so a large binary is read once.
     private static let scans = LockedValue<[String: ScanResult]>([:])
 
-    static func cachedClient(inArtifact url: URL, audience: String?) -> OAuthClient? {
+    static func cachedClients(inArtifact url: URL, audience: String?) -> [OAuthClient] {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         let key = [url.path,
                    "\((attributes?[.size] as? NSNumber)?.int64Value ?? -1)",
@@ -260,16 +317,16 @@ public struct AntigravityProvider: UsageProvider {
         if let cached = scans.withLock({ $0[key] }) {
             result = cached
         } else {
-            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return [] }
             result = scan(data)
             scans.withLock { $0[key] = result }
         }
-        return client(from: result, audience: audience)
+        return clients(from: result, audience: audience)
     }
 
     /// Text artifacts keep the pair next to this module; binaries are scanned whole.
-    static func client(inArtifact data: Data, audience: String?) -> OAuthClient? {
-        client(from: scan(data), audience: audience)
+    static func clients(inArtifact data: Data, audience: String?) -> [OAuthClient] {
+        clients(from: scan(data), audience: audience)
     }
 
     private static func scan(_ data: Data) -> ScanResult {
@@ -308,16 +365,24 @@ public struct AntigravityProvider: UsageProvider {
         return ScanResult(ids: ids, secrets: secrets)
     }
 
-    /// Only an unambiguous pair is used: one secret, and one client ID (or the
-    /// one the ID token names).
-    private static func client(from result: ScanResult, audience: String?) -> OAuthClient? {
-        guard result.secrets.count == 1, let secret = result.secrets.first else { return nil }
+    /// An artifact with more pairings than this is too ambiguous to try.
+    static let maxCandidates = 9
+
+    /// Every pairing of the client IDs (only the one the ID token names, when
+    /// known) with the secrets, in a repeatable order. Go binaries pool their
+    /// string constants by length, so which secret goes with which ID can't be
+    /// read off the file; Google's answer tells them apart.
+    private static func clients(from result: ScanResult, audience: String?) -> [OAuthClient] {
+        let ids: [String]
         if let audience {
-            guard result.ids.contains(where: { $0.hasSuffix(audience) }) else { return nil }
-            return OAuthClient(id: audience, secret: secret)
+            guard result.ids.contains(where: { $0.hasSuffix(audience) }) else { return [] }
+            ids = [audience]
+        } else {
+            ids = result.ids.sorted()
         }
-        guard result.ids.count == 1, let id = result.ids.first else { return nil }
-        return OAuthClient(id: id, secret: secret)
+        let secrets = result.secrets.sorted()
+        guard ids.count * secrets.count <= maxCandidates else { return [] }
+        return ids.flatMap { id in secrets.map { OAuthClient(id: id, secret: $0) } }
     }
 
     private static func isTokenByte(_ byte: UInt8) -> Bool {

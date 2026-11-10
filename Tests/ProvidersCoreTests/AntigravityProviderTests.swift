@@ -139,11 +139,25 @@ private struct AntigravitySandbox {
     }
 }
 
-/// A provider that never scans installed apps outside the sandbox.
-private func sandboxedProvider(artifacts: [URL] = []) -> AntigravityProvider {
+/// A provider that never scans installed apps or reads the Keychain outside the sandbox.
+private func sandboxedProvider(artifacts: [URL] = [], keychain: String? = nil) -> AntigravityProvider {
     var provider = AntigravityProvider()
     provider.artifactSearchPaths = artifacts
+    provider.keychainSignIn = { keychain }
     return provider
+}
+
+/// What Antigravity keeps in the Keychain: the token without an ID token, plus the account's email.
+private func keychainSignIn(_ fixture: String = "antigravity-oauth-token", refreshToken: String? = nil) throws -> String {
+    var json = AntigravityFixtures.object(try AntigravityFixtures.data(fixture))
+    if let refreshToken, var token = json["token"] as? [String: Any] {
+        token["refresh_token"] = refreshToken
+        json["token"] = token
+    }
+    json["id_token"] = nil
+    json["id_token_email"] = "keychain.user@example.com"
+    json["writer_id"] = "fake-writer"
+    return String(decoding: try JSONSerialization.data(withJSONObject: json), as: UTF8.self)
 }
 
 private typealias AntigravityResponse = (status: Int, fixture: String)
@@ -168,6 +182,30 @@ private func antigravityRoutes(
         default: return (404, Data())
         }
     }
+}
+
+/// Like `antigravityRoutes`, but only `accepted` renews; Google refuses every other client.
+private func renewingOnly(_ accepted: AntigravityProvider.OAuthClient?) throws -> AntigravityStubState.Handler {
+    let routes = try antigravityRoutes()
+    return { request, body in
+        guard request.url?.host == "oauth2.googleapis.com" else { return routes(request, body) }
+        let form = AntigravityFixtures.form(body)
+        guard form["client_id"] == accepted?.id else { return (400, Data(#"{"error":"unauthorized_client"}"#.utf8)) }
+        guard form["client_secret"] == accepted?.secret else { return (401, Data(#"{"error":"invalid_client"}"#.utf8)) }
+        return routes(request, body)
+    }
+}
+
+/// A Go-style binary pooling the given client IDs and 28-character secret bodies.
+private func clientBinary(ids: [String], secrets: [String]) -> Data {
+    var binary = Data([0xCF, 0xFA, 0xED, 0xFE, 0, 0, 0, 0])
+    binary.append(Data(ids.map { $0 + ".apps.googleusercontent.com" }.joined(separator: " ").utf8))
+    binary.append(Data(secrets.map { " GOCSPX-" + $0 }.joined().utf8))
+    return binary
+}
+
+private var tokenRequests: [AntigravityStubState.Recorded] {
+    AntigravityStubURLProtocol.state.requests.filter { $0.request.url?.host == "oauth2.googleapis.com" }
 }
 
 private func expectUnsupported(_ provider: AntigravityProvider, _ environment: ProviderEnvironment,
@@ -248,12 +286,56 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
             _ = try await provider.fetch(in: sandbox.environment())
             Issue.record("Expected notSignedIn")
         } catch ProviderFetchError.notSignedIn(let hint) {
-            #expect(hint.contains("agy"))
+            #expect(hint.contains("Antigravity app"))
         }
         #expect(AntigravityStubURLProtocol.state.requests.isEmpty)
 
         try sandbox.writeToken("antigravity-oauth-token")
         #expect(provider.isSignedIn(in: sandbox.environment()))
+    }
+
+    @Test func readsTheKeychainSignInWithoutATokenFile() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes())
+        let provider = sandboxedProvider(keychain: try keychainSignIn())
+
+        #expect(provider.isSignedIn(in: sandbox.environment()))
+        let snapshot = try await provider.fetch(in: sandbox.environment())
+
+        #expect(snapshot.account == "keychain.user@example.com")
+        #expect(snapshot.windows.count == 5)
+        let requests = AntigravityStubURLProtocol.state.requests
+        #expect(requests.allSatisfy {
+            $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer ya29.fake-antigravity-access-token"
+        })
+        // The saved email names the account; no userinfo lookup.
+        #expect(!requests.contains { $0.request.url?.host == "www.googleapis.com" })
+    }
+
+    @Test func tokenFileWinsOverTheKeychain() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        try sandbox.writeToken("antigravity-oauth-token")
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes())
+
+        let snapshot = try await sandboxedProvider(keychain: try keychainSignIn()).fetch(in: sandbox.environment())
+
+        #expect(snapshot.account == "agy.user@example.com")
+    }
+
+    @Test func unreadableKeychainSignInIsNotSignedIn() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes())
+
+        do {
+            _ = try await sandboxedProvider(keychain: "not json").fetch(in: sandbox.environment())
+            Issue.record("Expected notSignedIn")
+        } catch ProviderFetchError.notSignedIn(let hint) {
+            #expect(hint.contains("sign in again"))
+        }
+        #expect(AntigravityStubURLProtocol.state.requests.isEmpty)
     }
 
     @Test func expiredTokenIsRenewedInMemoryOnly() async throws {
@@ -303,18 +385,79 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
         #expect(form["client_secret"] == ("GOCSPX-" + "FakeAgySecret_0123456789abcd"))
     }
 
-    @Test func ambiguousArtifactsAreNotUsed() {
-        var twoSecrets = Data("1-a.apps.googleusercontent.com".utf8)
-        twoSecrets.append(Data(("GOCSPX-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaa GOCSPX-" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbb").utf8))
-        #expect(AntigravityProvider.client(inArtifact: twoSecrets, audience: nil) == nil)
+    @Test func ambiguousArtifactsYieldEveryPairing() {
+        typealias Client = AntigravityProvider.OAuthClient
+        let a = "GOCSPX-" + String(repeating: "a", count: 28), b = "GOCSPX-" + String(repeating: "b", count: 28)
+        let twoSecrets = clientBinary(ids: ["1-a"], secrets: [String(repeating: "b", count: 28), String(repeating: "a", count: 28)])
+        #expect(AntigravityProvider.clients(inArtifact: twoSecrets, audience: nil) == [
+            Client(id: "1-a.apps.googleusercontent.com", secret: a),
+            Client(id: "1-a.apps.googleusercontent.com", secret: b),
+        ])
 
-        var twoIDs = Data("1-a.apps.googleusercontent.com 2-b.apps.googleusercontent.com".utf8)
-        twoIDs.append(Data((" GOCSPX-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaa").utf8))
-        #expect(AntigravityProvider.client(inArtifact: twoIDs, audience: nil) == nil)
-        #expect(AntigravityProvider.client(inArtifact: twoIDs, audience: "2-b.apps.googleusercontent.com")
-            == AntigravityProvider.OAuthClient(id: "2-b.apps.googleusercontent.com",
-                                               secret: ("GOCSPX-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-        #expect(AntigravityProvider.client(inArtifact: twoIDs, audience: "3-c.apps.googleusercontent.com") == nil)
+        let twoIDs = clientBinary(ids: ["2-b", "1-a"], secrets: [String(repeating: "a", count: 28)])
+        #expect(AntigravityProvider.clients(inArtifact: twoIDs, audience: nil).map(\.id) == [
+            "1-a.apps.googleusercontent.com", "2-b.apps.googleusercontent.com",
+        ])
+        // The ID token's audience narrows the IDs to its own.
+        #expect(AntigravityProvider.clients(inArtifact: twoIDs, audience: "2-b.apps.googleusercontent.com")
+            == [Client(id: "2-b.apps.googleusercontent.com", secret: a)])
+        #expect(AntigravityProvider.clients(inArtifact: twoIDs, audience: "3-c.apps.googleusercontent.com").isEmpty)
+
+        let tooMany = clientBinary(ids: ["1-a", "2-b", "3-c", "4-d"],
+                                   secrets: ["a", "b", "c"].map { String(repeating: $0, count: 28) })
+        #expect(AntigravityProvider.clients(inArtifact: tooMany, audience: nil).isEmpty)
+    }
+
+    @Test func keychainSignInRenewsWithThePairingGoogleAccepts() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        let secrets = ["P", "Q"].map { String(repeating: $0, count: 28) }
+        let artifact = sandbox.home.appendingPathComponent("fake-language-server")
+        try clientBinary(ids: ["70-first", "80-second"], secrets: secrets).write(to: artifact)
+        let accepted = AntigravityProvider.OAuthClient(id: "80-second.apps.googleusercontent.com",
+                                                       secret: "GOCSPX-" + secrets[1])
+        AntigravityStubURLProtocol.state.reset(try renewingOnly(accepted))
+        let keychain = try keychainSignIn("antigravity-oauth-token-expired", refreshToken: "1//fake-keychain-pairing")
+
+        let snapshot = try await sandboxedProvider(artifacts: [artifact], keychain: keychain).fetch(in: sandbox.environment())
+
+        #expect(snapshot.windows.count == 5)
+        // Sorted pairings, tried until Google accepts the last one.
+        #expect(tokenRequests.map { AntigravityFixtures.form($0.body)["client_id"] ?? "" } == [
+            "70-first.apps.googleusercontent.com", "70-first.apps.googleusercontent.com",
+            "80-second.apps.googleusercontent.com", "80-second.apps.googleusercontent.com",
+        ])
+        #expect(AntigravityStubURLProtocol.state.requests.filter { $0.request.url?.host != "oauth2.googleapis.com" }
+            .allSatisfy { $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer ya29.fake-antigravity-renewed-token" })
+
+        // The next renewal starts with the pairing that worked.
+        AntigravityStubURLProtocol.state.reset(try renewingOnly(accepted))
+        let next = try keychainSignIn("antigravity-oauth-token-expired", refreshToken: "1//fake-keychain-pairing-next")
+        _ = try await sandboxedProvider(artifacts: [artifact], keychain: next).fetch(in: sandbox.environment())
+        #expect(tokenRequests.count == 1)
+        #expect(AntigravityFixtures.form(try #require(tokenRequests.first).body)["client_secret"] == accepted.secret)
+    }
+
+    @Test func noPairingThatRenewsStopsAskingGoogle() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        let artifact = sandbox.home.appendingPathComponent("fake-language-server")
+        try clientBinary(ids: ["50-only"], secrets: ["R", "S"].map { String(repeating: $0, count: 28) }).write(to: artifact)
+        AntigravityStubURLProtocol.state.reset(try renewingOnly(nil))
+        let provider = sandboxedProvider(
+            artifacts: [artifact],
+            keychain: try keychainSignIn("antigravity-oauth-token-expired", refreshToken: "1//fake-keychain-unrenewable"))
+
+        for expectedRequests in [2, 0] {
+            AntigravityStubURLProtocol.state.reset(try renewingOnly(nil))
+            do {
+                _ = try await provider.fetch(in: sandbox.environment())
+                Issue.record("Expected notSignedIn")
+            } catch ProviderFetchError.notSignedIn(let hint) {
+                #expect(hint.contains("Open Antigravity"))
+            }
+            #expect(AntigravityStubURLProtocol.state.requests.count == expectedRequests)
+        }
     }
 
     @Test func expiredTokenWithoutAClientExplainsHowToRenew() async throws {
