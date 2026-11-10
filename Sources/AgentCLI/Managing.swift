@@ -82,3 +82,52 @@ extension Commands {
         context.output("Saved the Codex login in use as “\(profile.displayName)”.")
     }
 }
+
+extension Commands {
+    /// `login codex [name]`: adds a Codex account in this terminal, as the
+    /// Mac app's Add Account does in Terminal. The login in use is kept in its
+    /// saved account and comes back if the sign-in doesn't finish. Codex
+    /// keeps the new login in auth.json (its file store), which switching needs.
+    func loginCodex(name: String?) async throws {
+        let switcher = codex
+        guard let cli = CodexCLI.resolve() else {
+            throw CLIError.failed("the codex CLI isn't installed; install it, then run this again")
+        }
+        let previous = try switcher.liveState().matchingProfileID
+        try await switcher.prepareForNewLogin()
+        context.errorOutput("Sign in to the ChatGPT account you want to add.")
+        let status = Self.runInteractive(cli.executable, ["-c", #"cli_auth_credentials_store="file""#, "login"])
+        guard status == 0, let file = try? switcher.liveState().file, file.identity != nil else {
+            try await switcher.restoreAfterLogin(previousProfileID: previous)
+            throw CLIError.failed("Codex sign-in didn't finish; the login you had is back")
+        }
+        let profile = try await switcher.completeNewLogin(name: name ?? (try switcher.suggestedName(for: file)))
+        if json {
+            return emit(["provider": Provider.codex.rawValue, "name": profile.displayName, "id": profile.id.uuidString,
+                         "state": "saved"] as [String: Any])
+        }
+        context.output("Added Codex account “\(profile.displayName)”; it is the one in use now.")
+    }
+
+    /// Runs a program on this terminal, so it can ask and show a browser link.
+    /// A Windows batch file (npm's codex.cmd) runs through cmd.
+    static func runInteractive(_ executable: URL, _ arguments: [String]) -> Int32 {
+        let process = Process()
+        #if os(Windows)
+        if ["cmd", "bat"].contains(executable.pathExtension.lowercased()) {
+            let systemRoot = ProcessInfo.processInfo.environment["SystemRoot"] ?? #"C:\Windows"#
+            process.executableURL = URL(fileURLWithPath: systemRoot + #"\System32\cmd.exe"#)
+            process.arguments = ["/d", "/c", executable.path] + arguments
+        } else {
+            process.executableURL = executable
+            process.arguments = arguments
+        }
+        #else
+        process.executableURL = executable
+        process.arguments = arguments
+        #endif
+        do { try process.run() } catch { return -1 }
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+}

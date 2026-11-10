@@ -122,6 +122,9 @@ public enum CLI {
             case ("setup", 2...3): try await commands.setup(try provider(words[1]), name: words.dropFirst(2).first)
             case ("new", 3): try commands.newProfile(try provider(words[1]), name: words[2])
             case ("save", 3): try commands.save(try provider(words[1]), name: words[2])
+            case ("login", 2...3):
+                guard try provider(words[1]) == .codex else { throw CLIError.usage("only codex signs in here: login codex [name]") }
+                try await commands.loginCodex(name: words.dropFirst(2).first)
             case ("setup", _), ("new", _), ("save", _):
                 throw CLIError.usage("\(words[0]) takes a provider and a name, e.g. \(words[0]) claude work")
             case ("cost", 1): await commands.cost()
@@ -194,6 +197,7 @@ public enum CLI {
       new claude|claude-cli <name>
                                 an empty profile that logs in on first use
       save codex <name>         keep the Codex login in use as a saved account
+      login codex [name]        sign in to another Codex account here and save it
 
       --json                    machine-readable output; a failure is {"error": "…"}
     """
