@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.6
+
+- Antigravity's card now matches Antigravity's own Usage view: its limits are grouped as Gemini Models, Claude and GPT models and Gemini 4 Argon, weekly before 5-hour. While Antigravity is open, the numbers come from the app itself, the only source of the Gemini 4 Argon allowance.
+- Fixed Antigravity's Gemini limits showing 100% left after using Gemini in the Antigravity app.
+- With "Follow the active app" on, bringing Antigravity to the front now switches the menu bar icon to it, as Claude and Codex do. Turn Antigravity on in Settings → More Providers first.
+
 ## 1.4.5
 
 - Antigravity usage now shows when you are signed in to the Antigravity app. Agent Profiles reads the sign-in the app keeps in the Keychain through macOS's own `security` tool, which that sign-in already trusts, so there is no Keychain prompt. Before, only the `agy` CLI's sign-in file was read, and app users saw "No Antigravity sign-in file found".
