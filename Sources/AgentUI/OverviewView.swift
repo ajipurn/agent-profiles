@@ -137,7 +137,7 @@ private struct OverviewRow: View {
 
     private var tooltip: String {
         row.card.limits.map { limit in
-            var line = "\(limit.title): \(UsageFormat.percent(limit.remaining)) left"
+            var line = "\(limit.fullTitle): \(UsageFormat.percent(limit.remaining)) left"
             if let reset = UsageFormat.resetText(limit.resetsAt, clock: UsageDisplay.resetAsClock) {
                 line += " · " + reset.lowercased()
             }
@@ -148,8 +148,8 @@ private struct OverviewRow: View {
     /// Short labels for the meters: "5h", "Wk", "Mo", "Day", else the first word.
     private func short(_ title: String) -> String {
         switch title {
-        case "Session": "5h"
-        case "Weekly": "Wk"
+        case "Session", "5h limit": "5h"
+        case "Weekly", "Weekly limit": "Wk"
         case "Monthly": "Mo"
         case "Daily": "Day"
         default: String(title.split(separator: " ").first ?? Substring(title))

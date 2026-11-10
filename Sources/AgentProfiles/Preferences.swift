@@ -69,8 +69,8 @@ enum Preferences {
         set { UserDefaults.standard.set(newValue?.rawValue, forKey: menuBarProviderKey) }
     }
 
-    /// Show the provider of the frontmost Claude or Codex app; on unless
-    /// turned off.
+    /// Show the provider of the frontmost Claude, Codex or More Providers
+    /// app (Antigravity); on unless turned off.
     static var followActiveApp: Bool {
         UserDefaults.standard.object(forKey: followActiveAppKey) as? Bool ?? true
     }

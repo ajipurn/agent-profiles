@@ -128,6 +128,15 @@ private struct AntigravitySandbox {
         try JSONSerialization.data(withJSONObject: json).write(to: tokenURL)
     }
 
+    /// The port file the Antigravity app's language server writes while it runs.
+    func writeHub(port: Int, pid: Int32) throws {
+        let folder = home.appendingPathComponent(".gemini/antigravity/daemon", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let hub: [String: Any] = ["pid": pid, "httpsPort": port - 1, "httpPort": port, "lsVersion": "2.30.0",
+                                  "csrfToken": "fake-csrf"]
+        try JSONSerialization.data(withJSONObject: hub).write(to: folder.appendingPathComponent("hub_\(port).json"))
+    }
+
     func environment(_ variables: [String: String] = [:]) -> ProviderEnvironment {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AntigravityStubURLProtocol.self]
@@ -167,12 +176,15 @@ private func antigravityRoutes(
     loadCodeAssist: AntigravityResponse = (200, "antigravity-load-code-assist"),
     summary: AntigravityResponse = (200, "antigravity-quota-summary"),
     dailySummary: AntigravityResponse = (200, "antigravity-quota-summary-daily"),
-    refresh: AntigravityResponse = (200, "antigravity-token-refresh")
+    refresh: AntigravityResponse = (200, "antigravity-token-refresh"),
+    local: AntigravityResponse = (404, "antigravity-userinfo")
 ) throws -> AntigravityStubState.Handler {
-    let bodies = try [loadCodeAssist, summary, dailySummary, refresh, (200, "antigravity-userinfo")]
+    let bodies = try [loadCodeAssist, summary, dailySummary, refresh, (200, "antigravity-userinfo"), local]
         .map { try AntigravityFixtures.data($0.fixture) }
     return { request, _ in
         switch (request.url?.host, request.url?.path) {
+        case ("127.0.0.1", "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"):
+            return (local.status, bodies[5])
         case ("oauth2.googleapis.com", "/token"): return (refresh.status, bodies[3])
         case ("www.googleapis.com", "/oauth2/v2/userinfo"): return (200, bodies[4])
         case (_, "/v1internal:loadCodeAssist"): return (loadCodeAssist.status, bodies[0])
@@ -223,28 +235,34 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
 // MARK: - Tests
 
 @Suite(.serialized) struct AntigravityProviderTests {
-    @Test func mapsTheQuotaSummaryPools() async throws {
+    @Test func listsLimitsAsTheUsageViewGroupsThem() async throws {
         let sandbox = try AntigravitySandbox()
         defer { sandbox.remove() }
         try sandbox.writeToken("antigravity-oauth-token")
-        AntigravityStubURLProtocol.state.reset(try antigravityRoutes())
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes(dailySummary: (404, "antigravity-userinfo")))
 
         let snapshot = try await sandboxedProvider().fetch(in: sandbox.environment())
 
         #expect(snapshot.account == "agy.user@example.com")
         #expect(snapshot.plan == "Pro")
-        #expect(snapshot.windows.map(\.title) == [
-            "Gemini 5h", "Gemini weekly", "Argon weekly", "Claude/GPT 5h", "Claude/GPT weekly",
+        // The summary's own order: groups as listed, weekly before 5-hour.
+        // A bucket with neither a window nor a name has nothing to call it.
+        #expect(snapshot.windows.map(\.group) == [
+            "Gemini Models", "Gemini Models", "Gemini 4 Argon", "Claude and GPT models", "Claude and GPT models",
         ])
-        #expect(snapshot.windows.map { $0.usedPercent.rounded() } == [5, 14, 40, 0, 11])
-        #expect(snapshot.windows.map(\.windowSeconds) == [18_000, 604_800, 604_800, 18_000, 604_800])
-        #expect(snapshot.windows[0].resetsAt == AntigravityFixtures.date("2026-11-05T15:48:04Z"))
+        #expect(snapshot.windows.map(\.title) == ["Weekly limit", "5h limit", "Weekly limit", "Weekly limit", "5h limit"])
+        #expect(snapshot.windows.map { $0.usedPercent.rounded() } == [14, 5, 40, 11, 0])
+        #expect(snapshot.windows.map(\.windowSeconds) == [604_800, 18_000, 604_800, 604_800, 18_000])
+        #expect(snapshot.windows[1].resetsAt == AntigravityFixtures.date("2026-11-05T15:48:04Z"))
+        // The menu bar shows the first group's 5-hour, then weekly, window.
+        #expect(snapshot.primaryWindows.map(\.title) == ["5h limit", "Weekly limit"])
+        #expect(snapshot.primaryWindows.map { $0.usedPercent.rounded() } == [5, 14])
 
         let requests = AntigravityStubURLProtocol.state.requests
-        // A complete production summary needs no daily read.
         #expect(requests.map { $0.request.url?.absoluteString } == [
             "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
             "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+            "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
         ])
         for recorded in requests {
             #expect(recorded.request.value(forHTTPHeaderField: "Authorization") == "Bearer ya29.fake-antigravity-access-token")
@@ -255,7 +273,7 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
         #expect(AntigravityFixtures.object(requests[1].body)["project"] as? String == "fake-antigravity-project-789")
     }
 
-    @Test func dailyHostFillsPoolsProductionLeftOut() async throws {
+    @Test func keepsTheLowerShareOfTheTwoHosts() async throws {
         let sandbox = try AntigravitySandbox()
         defer { sandbox.remove() }
         try sandbox.writeToken("antigravity-oauth-token")
@@ -265,14 +283,55 @@ private func expectUnsupported(_ provider: AntigravityProvider, _ environment: P
 
         let snapshot = try await sandboxedProvider().fetch(in: sandbox.environment())
 
-        #expect(snapshot.windows.map(\.title) == ["Gemini 5h", "Gemini weekly", "Claude/GPT 5h", "Claude/GPT weekly"])
-        // Production wins where it measured a pool; daily supplies the Gemini pools.
-        #expect(snapshot.windows.map { $0.usedPercent.rounded() } == [20, 30, 75, 50])
+        // Production's Gemini buckets are unmeasured or disabled; daily supplies them.
+        #expect(snapshot.windows.map { "\($0.group ?? "") · \($0.title)" } == [
+            "Claude and GPT models · Weekly limit", "Claude and GPT models · 5h limit",
+            "Gemini Models · 5h limit", "Gemini Models · Weekly limit",
+        ])
+        // Claude/GPT 5h: production's 25% left, not daily's 99%.
+        #expect(snapshot.windows.map { $0.usedPercent.rounded() } == [50, 75, 20, 30])
         // A measured 5-hour pool contradicts a "Free" label.
         #expect(snapshot.plan == nil)
         let quotaRequest = try #require(AntigravityStubURLProtocol.state.requests.last)
         #expect(quotaRequest.request.url?.host == "daily-cloudcode-pa.googleapis.com")
         #expect(AntigravityFixtures.object(quotaRequest.body)["project"] as? String == "fake-antigravity-free-project")
+    }
+
+    @Test func prefersTheRunningAppsOwnSummary() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        try sandbox.writeToken("antigravity-oauth-token")
+        try sandbox.writeHub(port: 4242, pid: ProcessInfo.processInfo.processIdentifier)
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes(local: (200, "antigravity-local-summary")))
+
+        let snapshot = try await sandboxedProvider().fetch(in: sandbox.environment())
+
+        #expect(snapshot.windows.map(\.group) == [
+            "Gemini Models", "Gemini Models", "Claude and GPT models", "Claude and GPT models", "Gemini 4 Argon",
+        ])
+        #expect(snapshot.windows.map { $0.usedPercent.rounded() } == [1, 2, 0, 0, 10])
+        #expect(snapshot.windows.last?.title == "Weekly limit")
+        let requests = AntigravityStubURLProtocol.state.requests
+        // Plan and account still come from Cloud Code; the numbers don't.
+        #expect(!requests.contains { $0.request.url?.path == "/v1internal:retrieveUserQuotaSummary" })
+        let local = try #require(requests.first { $0.request.url?.host == "127.0.0.1" })
+        #expect(local.request.url?.absoluteString
+            == "http://127.0.0.1:4242/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary")
+        #expect(local.request.value(forHTTPHeaderField: "X-Codeium-Csrf-Token") == "fake-csrf")
+        #expect(local.request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test func aClosedAppsPortFileIsIgnored() async throws {
+        let sandbox = try AntigravitySandbox()
+        defer { sandbox.remove() }
+        try sandbox.writeToken("antigravity-oauth-token")
+        try sandbox.writeHub(port: 4243, pid: Int32.max)
+        AntigravityStubURLProtocol.state.reset(try antigravityRoutes(local: (200, "antigravity-local-summary")))
+
+        let snapshot = try await sandboxedProvider().fetch(in: sandbox.environment())
+
+        #expect(!snapshot.windows.contains { $0.group == "Gemini 4 Argon" && $0.usedPercent.rounded() == 10 })
+        #expect(!AntigravityStubURLProtocol.state.requests.contains { $0.request.url?.host == "127.0.0.1" })
     }
 
     @Test func missingTokenFileIsNotSignedIn() async throws {

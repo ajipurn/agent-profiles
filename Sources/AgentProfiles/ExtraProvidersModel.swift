@@ -122,21 +122,28 @@ final class ExtraProvidersModel: ObservableObject {
         return card
     }
 
-    /// Titles must be unique per card (they key the rows).
+    /// Titles must be unique per group (with it, they key the rows).
     static func limits(_ snapshot: ProviderSnapshot) -> [UsageLimit] {
         var seen: [String: Int] = [:]
         return snapshot.windows.map { window in
-            seen[window.title, default: 0] += 1
-            let title = seen[window.title]! > 1 ? "\(window.title) \(seen[window.title]!)" : window.title
-            return UsageLimit(title: title, remaining: window.remainingPercent, resetsAt: window.resetsAt,
-                              window: window.windowSeconds)
+            var limit = UsageLimit(title: window.title, remaining: window.remainingPercent, resetsAt: window.resetsAt,
+                                   window: window.windowSeconds, group: window.group)
+            seen[limit.id, default: 0] += 1
+            if seen[limit.id]! > 1 { limit.title += " \(seen[limit.id]!)" }
+            return limit
         }
     }
 
-    /// The two windows the menu bar icon and switcher show.
+    /// The two windows the menu bar icon (top bar, bottom bar) and switcher show.
     func primaryRemaining(_ id: String) -> (Double?, Double?) {
-        let windows = states[id]?.snapshot?.windows ?? []
+        let windows = states[id]?.snapshot?.primaryWindows ?? []
         return (windows.first?.remainingPercent, windows.dropFirst().first?.remainingPercent)
+    }
+
+    /// The turned-on provider whose desktop app has this bundle ID.
+    func activeProvider(forBundleID bundleID: String?) -> (any UsageProvider)? {
+        guard let bundleID else { return nil }
+        return active.first { $0.appBundleIDs.contains(bundleID) }
     }
 
     var statusPages: [String: URL] {

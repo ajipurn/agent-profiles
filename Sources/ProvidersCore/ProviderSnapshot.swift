@@ -12,12 +12,17 @@ public struct ProviderWindow: Equatable, Sendable {
     public var resetsAt: Date?
     /// Length of the window, for pacing. Nil when unknown.
     public var windowSeconds: TimeInterval?
+    /// The heading the provider files this window under ("Gemini Models"),
+    /// shown above it; consecutive windows share one heading.
+    public var group: String?
 
-    public init(title: String, usedPercent: Double, resetsAt: Date? = nil, windowSeconds: TimeInterval? = nil) {
+    public init(title: String, usedPercent: Double, resetsAt: Date? = nil, windowSeconds: TimeInterval? = nil,
+                group: String? = nil) {
         self.title = title
         self.usedPercent = min(100, max(0, usedPercent.isFinite ? usedPercent : 0))
         self.resetsAt = resetsAt
         self.windowSeconds = windowSeconds
+        self.group = group
     }
 
     public var remainingPercent: Double { 100 - usedPercent }
@@ -43,17 +48,21 @@ public struct ProviderSnapshot: Equatable, Sendable {
     public var account: String?
     /// Plan name ("Pro", "Business").
     public var plan: String?
-    /// Most important first: the first window drives the menu bar icon's
-    /// top bar, the second its bottom bar.
+    /// In the order the panel lists them, most important first unless the
+    /// provider has an order of its own.
     public var windows: [ProviderWindow]
+    /// The windows the menu bar icon (top bar, then bottom bar) and the
+    /// provider's tab show: the first two windows unless the provider names others.
+    public var primaryWindows: [ProviderWindow]
     public var details: [ProviderDetail]
     public var fetchedAt: Date
 
     public init(account: String? = nil, plan: String? = nil, windows: [ProviderWindow] = [],
-                details: [ProviderDetail] = [], fetchedAt: Date = Date()) {
+                primaryWindows: [ProviderWindow]? = nil, details: [ProviderDetail] = [], fetchedAt: Date = Date()) {
         self.account = account
         self.plan = plan
         self.windows = windows
+        self.primaryWindows = primaryWindows ?? Array(windows.prefix(2))
         self.details = details
         self.fetchedAt = fetchedAt
     }
@@ -124,6 +133,9 @@ public protocol UsageProvider: Sendable {
     var dashboardURL: URL? { get }
     /// Statuspage base URL (".../api/v2/status.json" is appended), if any.
     var statusPageURL: URL? { get }
+    /// Bundle IDs of the provider's own desktop app. Bringing one to the
+    /// front shows this provider in the menu bar, as Claude's and Codex's do.
+    var appBundleIDs: [String] { get }
 
     /// True when a local sign-in exists. Touches only the file system (and,
     /// for Antigravity, a Keychain item's attributes, which never prompts).
@@ -134,4 +146,5 @@ public protocol UsageProvider: Sendable {
 public extension UsageProvider {
     var dashboardURL: URL? { nil }
     var statusPageURL: URL? { nil }
+    var appBundleIDs: [String] { [] }
 }
