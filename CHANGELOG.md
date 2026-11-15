@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.11
+
+- Claude usage is live again. Recent Claude Desktop versions stopped saving their usage numbers, so Agent Profiles now asks Anthropic for them directly, using the sign-in Claude Desktop already has for each profile. The numbers refresh every couple of minutes, and the Refresh button asks right away.
+- The first time, and after each update, macOS asks to let Agent Profiles use "Claude Safe Storage" from your Keychain; that is where Claude keeps its sign-in locked. Choose Always Allow. If you deny it, the card falls back to whatever Claude last saved. PRIVACY.md in the repository explains what is read and where it is sent.
+
 ## 1.4.10
 
 - The Claude card no longer shows old usage numbers as if they were current. Recent Claude Desktop versions often stop saving usage numbers, so when the ones Agent Profiles has are more than 30 minutes old while Claude is running, each limit now reads "Unknown · was 58% left" instead of "58% left". The menu bar shows "–" until Claude saves new numbers, and usage alerts wait for them too.
