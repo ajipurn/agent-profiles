@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.9
+
+- Fixed the Claude card showing old usage numbers after Claude Desktop updated: Claude now saves most usage lookups under a slightly different address, and Agent Profiles skipped those. Recent Claude Desktop versions also save usage less often than before, so the card can still say Claude hasn't refreshed the numbers for a while.
+
 ## 1.4.8
 
 - Fixed Add Account for Antigravity waiting forever after you signed in: right after a sign-in, Antigravity doesn't record which Google account it is, so the new account was never saved. Agent Profiles now asks Google which account it is, once.
