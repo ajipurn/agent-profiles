@@ -39,15 +39,18 @@ public struct ProfileUsage: Equatable, Sendable {
     /// When Claude fetched these numbers (cache entry mtime).
     public let asOf: Date
     public let orgID: String
+    /// False for `?skip_spend=1` responses, which leave `extra_usage` out.
+    var spendIncluded = true
 
     init(fiveHour: Window?, sevenDay: Window?, scoped: [ScopedWindow] = [], extraUsage: ExtraUsage? = nil,
-         asOf: Date, orgID: String) {
+         asOf: Date, orgID: String, spendIncluded: Bool = true) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
         self.scoped = scoped
         self.extraUsage = extraUsage
         self.asOf = asOf
         self.orgID = orgID
+        self.spendIncluded = spendIncluded
     }
 }
 
@@ -102,8 +105,8 @@ public enum UsageReader {
 
             let parsed: ProfileUsage?
             if let data = try? Data(contentsOf: file),
-               let (org, body) = parseUsageEntry(data) {
-                parsed = decode(body: body, orgID: org, asOf: mtime)
+               let entry = parseUsageEntry(data) {
+                parsed = decode(body: entry.body, orgID: entry.org, asOf: mtime, spendIncluded: entry.spendIncluded)
             } else {
                 parsed = nil
             }
@@ -123,11 +126,25 @@ public enum UsageReader {
 
         let matching = found.filter { orgIDs.contains($0.orgID) }
         let pool = (orgIDs.isEmpty || matching.isEmpty) ? found : matching
-        return pool.max { $0.asOf < $1.asOf }
+        guard var newest = pool.max(by: { $0.asOf < $1.asOf }) else { return nil }
+        // A `skip_spend` response says nothing about extra usage; keep what
+        // the newest full response for the same org said (Claude does too).
+        if !newest.spendIncluded {
+            newest.extraUsage = pool
+                .filter { $0.spendIncluded && $0.orgID == newest.orgID }
+                .max { $0.asOf < $1.asOf }?.extraUsage
+        }
+        return newest
     }
 
-    /// Returns (orgID, response body) if `data` is a cache entry for /usage.
-    static func parseUsageEntry(_ data: Data) -> (String, Data)? {
+    struct UsageEntry {
+        let org: String
+        let body: Data
+        let spendIncluded: Bool
+    }
+
+    /// Returns the org and response body if `data` is a cache entry for /usage.
+    static func parseUsageEntry(_ data: Data) -> UsageEntry? {
         // Header: magic u64, version u32, key_length u32, key_hash u32 —
         // padded to 24 bytes on disk (struct alignment), then the key.
         let headerSize = 24
@@ -135,15 +152,21 @@ public enum UsageReader {
         let keyLen = Int(data[12]) | Int(data[13]) << 8 | Int(data[14]) << 16 | Int(data[15]) << 24
         guard keyLen > 0, keyLen < 4096, data.count > headerSize + keyLen,
               let key = String(data: data[headerSize ..< headerSize + keyLen], encoding: .utf8) else { return nil }
-        // Key looks like "1/0/https://claude.ai/api/organizations/<uuid>/usage".
-        guard key.hasSuffix("/usage"),
-              let range = key.range(of: "/api/organizations/") else { return nil }
-        let org = String(key[range.upperBound...].dropLast("/usage".count))
-        guard org.count == 36 else { return nil }
-        return (org, data.subdata(in: (headerSize + keyLen) ..< data.count))
+        // Key looks like "1/0/https://claude.ai/api/organizations/<uuid>/usage",
+        // optionally with a query: Claude asks for "?skip_spend=1",
+        // "?at_wall=1&skip_spend=1", "?source=…" and so on — same body shape.
+        guard let range = key.range(of: "/api/organizations/") else { return nil }
+        let rest = key[range.upperBound...]
+        let org = String(rest.prefix(36))
+        let tail = rest.dropFirst(36)
+        guard org.count == 36, tail == "/usage" || tail.hasPrefix("/usage?") else { return nil }
+        let query = tail.dropFirst("/usage".count)
+        let skipsSpend = query.dropFirst().split(separator: "&").contains("skip_spend=1")
+        return UsageEntry(org: org, body: data.subdata(in: (headerSize + keyLen) ..< data.count),
+                          spendIncluded: !skipsSpend)
     }
 
-    static func decode(body: Data, orgID: String, asOf: Date) -> ProfileUsage? {
+    static func decode(body: Data, orgID: String, asOf: Date, spendIncluded: Bool = true) -> ProfileUsage? {
         // The body stream is followed by the entry's EOF record; the zstd
         // decoder stops at the frame end, so trailing bytes are harmless.
         // An uncompressed body (no content-encoding) starts with '{' — there
@@ -170,8 +193,8 @@ public enum UsageReader {
         guard five != nil || seven != nil else { return nil }
         return ProfileUsage(fiveHour: five, sevenDay: seven,
                             scoped: scopedWindows(obj, legacy: window),
-                            extraUsage: extraUsage(obj["extra_usage"]),
-                            asOf: asOf, orgID: orgID)
+                            extraUsage: spendIncluded ? extraUsage(obj["extra_usage"]) : nil,
+                            asOf: asOf, orgID: orgID, spendIncluded: spendIncluded)
     }
 
     /// Per-model weekly windows. Older responses name them `seven_day_sonnet`
