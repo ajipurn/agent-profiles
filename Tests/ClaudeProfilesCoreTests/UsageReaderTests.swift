@@ -27,8 +27,8 @@ final class UsageReaderTests {
 
     /// A Chromium simple-cache entry: 24-byte header (magic, version, key
     /// length, key hash + alignment padding), key, body, trailing EOF record.
-    func cacheEntry(org: String, body: Data) -> Data {
-        let key = "1/0/https://claude.ai/api/organizations/\(org)/usage"
+    func cacheEntry(org: String, body: Data, path: String = "/usage") -> Data {
+        let key = "1/0/https://claude.ai/api/organizations/\(org)\(path)"
         var data = Data(UsageReader.entryMagic)
         for value in [UInt32(5), UInt32(key.utf8.count), UInt32(0)] {
             withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
@@ -40,11 +40,12 @@ final class UsageReaderTests {
         return data
     }
 
-    func writeEntry(_ name: String, org: String, body: Data, mtime: Date? = nil) throws -> URL {
+    @discardableResult
+    func writeEntry(_ name: String, org: String, body: Data, path: String = "/usage", mtime: Date? = nil) throws -> URL {
         let dir = home.appendingPathComponent("Cache/Cache_Data")
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent(name)
-        try cacheEntry(org: org, body: body).write(to: file)
+        try cacheEntry(org: org, body: body, path: path).write(to: file)
         if let mtime {
             try fm.setAttributes([.modificationDate: mtime], ofItemAtPath: file.path)
         }
@@ -78,6 +79,36 @@ final class UsageReaderTests {
         #expect(UsageReader.usage(inProfileDir: home)?.orgID == otherOrg)
         // Hint that matches nothing → fall back to newest.
         #expect(UsageReader.usage(inProfileDir: home, orgIDs: ["nope"])?.orgID == otherOrg)
+    }
+
+    func json(_ s: String) -> Data { s.data(using: .utf8)! }
+
+    @Test func testReadsUsageEntriesWithAQuery() throws {
+        // Claude Desktop mostly asks for "/usage?skip_spend=1" and friends now.
+        try writeEntry("plain_0", org: org, body: json(#"{"five_hour":{"utilization":10.0}}"#),
+                       mtime: Date(timeIntervalSinceNow: -7200))
+        try writeEntry("query_0", org: org, body: json(#"{"five_hour":{"utilization":77.0}}"#),
+                       path: "/usage?at_wall=1&skip_spend=1", mtime: Date(timeIntervalSinceNow: -60))
+        #expect(UsageReader.usage(inProfileDir: home, orgIDs: [org])?.fiveHour?.percent == 77.0)
+    }
+
+    @Test func testSkipSpendKeepsExtraUsageFromTheLastFullResponse() throws {
+        let extra = #""extra_usage":{"is_enabled":true,"used_credits":1250,"monthly_limit":5000,"currency":"USD"}"#
+        try writeEntry("full_0", org: org, body: json(#"{"five_hour":{"utilization":10.0},\#(extra)}"#),
+                       mtime: Date(timeIntervalSinceNow: -7200))
+        try writeEntry("skip_0", org: org, body: json(#"{"five_hour":{"utilization":50.0},"extra_usage":null}"#),
+                       path: "/usage?skip_spend=1", mtime: Date(timeIntervalSinceNow: -60))
+        let usage = try #require(UsageReader.usage(inProfileDir: home))
+        #expect(usage.fiveHour?.percent == 50.0)
+        #expect(usage.extraUsage == .init(used: 12.5, limit: 50, currency: "USD"))
+    }
+
+    @Test func testOtherUsageEndpointsAreIgnored() throws {
+        let body = json(#"{"five_hour":{"utilization":99.0}}"#)
+        try writeEntry("activity_0", org: org, body: body, path: "/usage/activity")
+        try writeEntry("spend_0", org: org, body: body, path: "/usage/spend?period=7d")
+        try writeEntry("stats_0", org: org, body: body, path: "/usage_stats")
+        #expect(UsageReader.usage(inProfileDir: home) == nil)
     }
 
     @Test func testGarbageAndForeignEntriesAreIgnored() throws {
