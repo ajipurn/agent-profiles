@@ -576,6 +576,14 @@ public final class ProfileManager: Sendable {
         return UsageReader.usage(inProfileDir: dir, orgIDs: orgIDs(of: dir))
     }
 
+    /// What a live usage lookup needs from a profile: Claude's sealed sign-in
+    /// and the organizations the profile has used.
+    public func desktopLogin(profile name: String) -> (sealed: DesktopLogin.Sealed, orgIDs: Set<String>)? {
+        let dir = profilesDir.appendingPathComponent(name)
+        guard let sealed = DesktopLogin.sealed(inProfileDir: dir) else { return nil }
+        return (sealed, orgIDs(of: dir))
+    }
+
     /// ownerAccountId from cowork-enabled-cli-ops.json — written on login.
     private func accountID(of profileDir: URL) -> String? {
         guard let data = try? Data(contentsOf: profileDir.appendingPathComponent("cowork-enabled-cli-ops.json")),

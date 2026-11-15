@@ -10,6 +10,8 @@ final class AppState: ObservableObject {
     let manager: ProfileManager
     let cli: CLIProfileManager
     let claude: ClaudeAppController
+    /// Live usage asked with Claude's own sign-in; nil in preview mode.
+    private let liveUsage: ClaudeLiveUsage?
 
     @Published var profiles: [String] = []
     @Published var activeProfile: String?
@@ -41,6 +43,7 @@ final class AppState: ObservableObject {
         manager = ProfileManager(home: home)
         cli = CLIProfileManager(home: home)
         claude = ClaudeAppController(inert: demo)
+        liveUsage = demo ? nil : ClaudeLiveUsage()
         refresh()
         // The usage scan is async, so the menu bar's first frame used to
         // flash the no-data fallback icon. Reading just the active profile's
@@ -184,18 +187,27 @@ final class AppState: ObservableObject {
         cacheWatcher = source
     }
 
-    /// Scans every profile's cache off the main thread; cheap (small files
-    /// only) but not free, so runs are coalesced.
-    func refreshUsage() {
+    /// Scans every profile's cache off the main thread and asks for live
+    /// numbers where Claude's sign-in allows; the newer reading wins. Runs
+    /// are coalesced. `force` (the Refresh button) asks again right away.
+    func refreshUsage(force: Bool = false) {
         guard !usageScanRunning else { return }
         usageScanRunning = true
         let names = profiles
         let manager = manager
+        let liveUsage = liveUsage
         Task.detached(priority: .utility) {
-            // One task per profile: the scans are independent file reads.
+            // One task per profile: the scans and asks are independent.
             let map = await withTaskGroup(of: (String, ProfileUsage?).self) { group in
                 for name in names {
-                    group.addTask { (name, manager.usage(profile: name)) }
+                    group.addTask {
+                        let cached = manager.usage(profile: name)
+                        let live = await liveUsage?.usage(profile: name, login: manager.desktopLogin(profile: name),
+                                                          force: force)
+                        guard let live else { return (name, cached) }
+                        guard let cached else { return (name, live) }
+                        return (name, live.asOf >= cached.asOf ? live : cached)
+                    }
                 }
                 var out: [String: ProfileUsage] = [:]
                 for await (name, usage) in group {

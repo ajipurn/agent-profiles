@@ -2,9 +2,9 @@ import Foundation
 import CZstd
 import PlatformSupport
 
-/// The official usage-limit numbers for one account, as last seen by Claude
-/// Desktop itself. Read from the profile's own HTTP cache — the app makes no
-/// network requests and touches no cookies or tokens.
+/// The official usage-limit numbers for one account: read from the profile's
+/// own HTTP cache (what Claude Desktop last saw), or asked for live with
+/// Claude's own sign-in (see `DesktopLogin`).
 public struct ProfileUsage: Equatable, Sendable {
     public struct Window: Equatable, Sendable {
         public let percent: Double
@@ -36,7 +36,7 @@ public struct ProfileUsage: Equatable, Sendable {
     public let sevenDay: Window?
     public var scoped: [ScopedWindow] = []
     public var extraUsage: ExtraUsage?
-    /// When Claude fetched these numbers (cache entry mtime).
+    /// When these numbers were fetched (cache entry mtime, or the live answer).
     public let asOf: Date
     public let orgID: String
     /// False for `?skip_spend=1` responses, which leave `extra_usage` out.
