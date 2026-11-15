@@ -7,8 +7,9 @@ The two providers work differently, and so does what the app touches for each.
 ## Claude
 
 - Profiles are folders under `~/Library/Application Support/Claude-Profiles/`. `~/Library/Application Support/Claude` becomes a link to the active one. Claude Code (CLI) profiles live in `Claude-Profiles/_cli/`.
-- The app never reads Claude passwords, cookies or tokens. It moves and links these folders, and reads a few of Claude's own local files: its config, and its HTTP cache for the usage numbers.
-- Claude usage is read from that local cache, so Claude needs no network requests from this app.
+- The app never reads Claude passwords or cookies. It moves and links these folders, and reads a few of Claude's own local files: its config and its HTTP cache.
+- Recent Claude Desktop versions no longer save the usage numbers on disk, so the app asks Anthropic for them. It takes Claude Desktop's sign-in token from each profile's `config.json`, unlocks it with the "Claude Safe Storage" password from your Keychain (macOS asks you to allow this), and sends it only to Anthropic's usage endpoint (`api.anthropic.com/api/oauth/usage`), at most every two minutes per profile. The token stays in memory; the app never refreshes, changes or saves it.
+- If you deny Keychain access, or a profile has no current sign-in, its usage comes from Claude's local HTTP cache instead.
 - Shared session history makes a timestamped backup in your home folder before merging anything.
 
 ## Codex

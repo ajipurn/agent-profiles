@@ -192,7 +192,7 @@ final class StatusPanelController: NSObject {
         case .setUpClaude: claude.setUpProfiles()
         case .newClaudeProfile: claude.newProfile()
         case .refreshClaude:
-            claude.refreshUsage()
+            claude.refreshUsage(force: true)
             cost.refresh(force: true)
         case .refreshCodex:
             codex.refreshUsage(force: true)
