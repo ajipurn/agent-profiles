@@ -11,6 +11,9 @@ public struct UsageLimit: Equatable, Sendable, Identifiable {
     /// Heading the card shows above this limit ("Gemini Models"); limits in
     /// a row with the same group share one heading.
     public var group: String?
+    /// The remaining share last reported, kept while `remaining` is nil
+    /// because that report is too old to say what's left now.
+    public var lastSeen: Double?
 
     public var id: String { fullTitle }
 
@@ -19,12 +22,13 @@ public struct UsageLimit: Equatable, Sendable, Identifiable {
     public var fullTitle: String { group.map { "\($0) · \(title)" } ?? title }
 
     public init(title: String, remaining: Double?, resetsAt: Date? = nil, window: TimeInterval? = nil,
-                group: String? = nil) {
+                group: String? = nil, lastSeen: Double? = nil) {
         self.title = title
         self.remaining = remaining
         self.resetsAt = resetsAt
         self.window = window
         self.group = group
+        self.lastSeen = lastSeen
     }
 
     public func pace(now: Date = Date()) -> UsagePace {
@@ -285,6 +289,14 @@ public enum UsageFormat {
     public static func share(_ remaining: Double?, showsUsed: Bool) -> String {
         guard let remaining else { return "No data yet" }
         return showsUsed ? "\(percent(100 - remaining)) used" : "\(percent(remaining)) left"
+    }
+
+    /// A limit's share, or for a report too old to trust "Unknown · was 58% left".
+    public static func share(_ limit: UsageLimit, showsUsed: Bool) -> String {
+        if limit.remaining == nil, let lastSeen = limit.lastSeen {
+            return "Unknown · was " + share(lastSeen, showsUsed: showsUsed)
+        }
+        return share(limit.remaining, showsUsed: showsUsed)
     }
 
     /// The figure a compact meter shows: remaining, or used.
