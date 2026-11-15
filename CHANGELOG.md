@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.10
+
+- The Claude card no longer shows old usage numbers as if they were current. Recent Claude Desktop versions often stop saving usage numbers, so when the ones Agent Profiles has are more than 30 minutes old while Claude is running, each limit now reads "Unknown · was 58% left" instead of "58% left". The menu bar shows "–" until Claude saves new numbers, and usage alerts wait for them too.
+
 ## 1.4.9
 
 - Fixed the Claude card showing old usage numbers after Claude Desktop updated: Claude now saves most usage lookups under a slightly different address, and Agent Profiles skipped those. Recent Claude Desktop versions also save usage less often than before, so the card can still say Claude hasn't refreshed the numbers for a while.
