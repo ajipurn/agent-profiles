@@ -257,7 +257,7 @@ private struct LimitRow: View {
             HStack(alignment: .firstTextBaseline) {
                 // Click either value to flip how every value reads.
                 Button { showsUsed.toggle() } label: {
-                    Text(UsageFormat.share(limit.remaining, showsUsed: showsUsed))
+                    Text(UsageFormat.share(limit, showsUsed: showsUsed))
                         .font(.system(size: 12, weight: .medium))
                         .monospacedDigit()
                         .contentTransition(.numericText())
